@@ -12,7 +12,7 @@ import org.firstinspires.ftc.robotcore.external.JavaUtil;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
-@TeleOp(name = "helloFTC_MoreImprovementsJava")
+@TeleOp(name = "helloAndroidStudio")
 public class helloFTC_MoreImprovements extends LinearOpMode {
 
   private DcMotor FrontLeftMotor;
@@ -319,13 +319,23 @@ public class helloFTC_MoreImprovements extends LinearOpMode {
           frTargetPower = frTargetPower + SIDEWAYS_CORRECTION_FACTOR;
           blTargetPower = blTargetPower - SIDEWAYS_CORRECTION_FACTOR;
           brTargetPower = brTargetPower + SIDEWAYS_CORRECTION_FACTOR;
+
+//          flTargetPower = flTargetPower - SIDEWAYS_CORRECTION_FACTOR;
+//          frTargetPower = frTargetPower + SIDEWAYS_CORRECTION_FACTOR;
+//          blTargetPower = blTargetPower - SIDEWAYS_CORRECTION_FACTOR;
+//          brTargetPower = brTargetPower + SIDEWAYS_CORRECTION_FACTOR;
           telemetry.addData("Turning Correction", "Adjusting Right");
         } else if (headingDiff > 0) {
           // Need to go left
-          flTargetPower = flTargetPower + SIDEWAYS_CORRECTION_FACTOR;
-          frTargetPower = frTargetPower - SIDEWAYS_CORRECTION_FACTOR;
-          blTargetPower = blTargetPower + SIDEWAYS_CORRECTION_FACTOR;
-          brTargetPower = brTargetPower - SIDEWAYS_CORRECTION_FACTOR;
+         flTargetPower = flTargetPower + SIDEWAYS_CORRECTION_FACTOR;
+         frTargetPower = frTargetPower - SIDEWAYS_CORRECTION_FACTOR;
+         blTargetPower = blTargetPower + SIDEWAYS_CORRECTION_FACTOR;
+         brTargetPower = brTargetPower - SIDEWAYS_CORRECTION_FACTOR;
+
+//          flTargetPower = flTargetPower + SIDEWAYS_CORRECTION_FACTOR;
+//          frTargetPower = frTargetPower - SIDEWAYS_CORRECTION_FACTOR;
+//          blTargetPower = blTargetPower + SIDEWAYS_CORRECTION_FACTOR;
+//          brTargetPower = brTargetPower - SIDEWAYS_CORRECTION_FACTOR;
           telemetry.addData("Turning Correction", "Adjusting Right");
         }
       }
@@ -345,8 +355,8 @@ public class helloFTC_MoreImprovements extends LinearOpMode {
     // Set Motors
     FrontLeftMotor.setPower(flTargetPower);
     FrontRightMotor.setPower(frTargetPower);
-    BackLeftMotor.setPower(blTargetPower);
-    BackRightMotor.setPower(brTargetPower);
+    BackLeftMotor.setPower(blTargetPower * 0.8);
+    BackRightMotor.setPower(brTargetPower * 0.8);
     if (gamepad1.right_trigger > 0) {
       pulleyMotor.setPower(gamepad1.right_trigger);
     } else if (gamepad1.left_trigger > 0) {

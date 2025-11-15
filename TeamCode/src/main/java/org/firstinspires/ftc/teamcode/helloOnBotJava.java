@@ -446,7 +446,7 @@ public class helloOnBotJava extends LinearOpMode {
     List allCurrentMotorTicks;
     List allMotorTickDiffs;
     double avgMotorTickDiffs;
-    double motorTargetSpeed;
+    double motorTargetSpeed = 0;
     double exitCondition1;
     boolean exitCondition2;
 
