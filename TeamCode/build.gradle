@@ -26,7 +26,10 @@ android {
 dependencies {
     implementation project(':FtcRobotController')
 // https://mvnrepository.com/artifact/com.googlecode.json-simple/json-simple
-    implementation('com.googlecode.json-simple:json-simple:1.1.1') {
-        exclude group: 'org.hamcrest', module: 'hamcrest-core'
-    }
+//    implementation('com.googlecode.json-simple:json-simple:1.1.1') {
+//        exclude group: 'org.hamcrest', module: 'hamcrest-core'
+//    }
+
+    // https://mvnrepository.com/artifact/com.google.code.gson/gson
+    implementation 'com.google.code.gson:gson:2.13.2'
 }

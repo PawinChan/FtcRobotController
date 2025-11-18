@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.google.gson.Gson;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
@@ -13,16 +14,14 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
 
-import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
-import java.net.URL;
 
 import org.firstinspires.ftc.teamcode.util.TelemetryWebsocketsServer;
 import org.java_websocket.server.WebSocketServer;
-import org.json.simple.JSONObject;
+//import org.json.simple.JSONObject;
 
-import java.io.OutputStreamWriter;
 import java.text.DecimalFormat;
+import java.util.LinkedHashMap;
 
 @TeleOp(name = "helloAndroidStudio2")
 public class experimentalTeleop extends LinearOpMode {
@@ -51,9 +50,12 @@ public class experimentalTeleop extends LinearOpMode {
     double SIDEWAYS_CORRECTION_FACTOR = 0.09;
     int ANGLE_TOLERANCE = 1;
     double TURN_SETTLE_SECS = 0.2;
-    boolean setHeadingDone = true; //its set just above to 0 when the robot starts
+    boolean targetHeadingRecorded = true; //its set just above to 0 when the robot starts
     WebSocketServer server = new TelemetryWebsocketsServer(new InetSocketAddress("0.0.0.0", 8765));
-    JSONObject telemetryDataDict  = new JSONObject();
+    LinkedHashMap<String, LinkedHashMap<String, Object>> telemetryDataDict = new LinkedHashMap<>();
+
+
+//
 
     /**
      * This sample contains the bare minimum Blocks for any regular OpMode. The 3 blue
@@ -81,7 +83,7 @@ public class experimentalTeleop extends LinearOpMode {
         pulleyMotor = hardwareMap.get(DcMotor.class, "pulleyMotor");
 
         setup();
-        collectTelemetry("Ready: ", "Waiting for start.");
+        collectTelemetry("Message", "Ready: ", "Waiting for start.");
         submitTelemetry();
         waitForStart();
         if (opModeIsActive()) {
@@ -93,7 +95,7 @@ public class experimentalTeleop extends LinearOpMode {
     }
 
 
-    private void collectTelemetry(String key, Object value){
+    private void collectTelemetry(String category, String key, Object value){
         String valueToAdd;
         if (value instanceof String) {
             valueToAdd = (String) value;
@@ -105,13 +107,22 @@ public class experimentalTeleop extends LinearOpMode {
         } else {
             valueToAdd = value.toString();
         }
-        telemetryDataDict.put(key, valueToAdd);
+
+
+        if (!telemetryDataDict.containsKey(category)) {
+            telemetryDataDict.put(category, new LinkedHashMap<String, Object>());
+        }
+
+        telemetryDataDict.get(category).put(key, value);
+        //Add it to the controller screen too.
         telemetry.addData(key, value);
     }
 
     private void submitTelemetry() {
         telemetry.update();
-        server.broadcast(telemetryDataDict.toJSONString());
+
+        Gson gson = new Gson();
+        server.broadcast(gson.toJson(telemetryDataDict));
         telemetryDataDict.clear();
     }
 
@@ -166,8 +177,8 @@ public class experimentalTeleop extends LinearOpMode {
 
     private double getHeading() {
         double botHeadingDeg = imu_IMU.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
-        collectTelemetry("Yaw (heading)", botHeadingDeg);
-        collectTelemetry("YawPitchRoll", imu_IMU.getRobotYawPitchRollAngles().toString());
+        collectTelemetry("IMU","Yaw (heading)", botHeadingDeg);
+        collectTelemetry("IMU", "YawPitchRoll", imu_IMU.getRobotYawPitchRollAngles().toString());
         return botHeadingDeg;
     }
 
@@ -206,57 +217,57 @@ public class experimentalTeleop extends LinearOpMode {
 //        } else {
 //            coastingSpeed = 0.08;
         }
-        collectTelemetry("calculatedCorrectionSpeed", coastingSpeed);
+        collectTelemetry("Steering", "calculatedCorrectionSpeed", coastingSpeed);
         return coastingSpeed;
     }
     // SECTION: EXPERIMENTAL CODE
 
-    private int getHTTP(String targetUrl) {
-        collectTelemetry("HTTP", "GETting " + targetUrl);
-        submitTelemetry();
-        collectTelemetry("HTTP", "GETting " + targetUrl);
-        try {
-            URL url = new URL(targetUrl);
-            HttpURLConnection con = (HttpURLConnection) url.openConnection();
-            con.setRequestMethod("GET");
-            con.setRequestProperty("Content-Type", "application/json");
-            int status = con.getResponseCode();
-            con.disconnect();
-            return status;
-        } catch (Exception e) {
-            e.printStackTrace();
-            collectTelemetry("Exception", e);
-            return -1;
-        }
-    }
+//    private int getHTTP(String targetUrl) {
+//        collectTelemetry("HTTP", "GETting " + targetUrl);
+//        submitTelemetry();
+//        collectTelemetry("HTTP", "GETting " + targetUrl);
+//        try {
+//            URL url = new URL(targetUrl);
+//            HttpURLConnection con = (HttpURLConnection) url.openConnection();
+//            con.setRequestMethod("GET");
+//            con.setRequestProperty("Content-Type", "application/json");
+//            int status = con.getResponseCode();
+//            con.disconnect();
+//            return status;
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            collectTelemetry("Exception", e);
+//            return -1;
+//        }
+//    }
 
-    private int postHTTP(String targetUrl, JSONObject jsonData) {
-        collectTelemetry("HTTP", "POSTing to " + targetUrl);
-        submitTelemetry();
-        collectTelemetry("HTTP", "POSTing to " + targetUrl);
-        try {
-            URL url = new URL(targetUrl);
-            HttpURLConnection con = (HttpURLConnection) url.openConnection();
-            con.setConnectTimeout(1000);
-            con.setReadTimeout(1000);
-            con.setRequestMethod("POST");
-            con.setRequestProperty("Content-Type", "application/json");
-
-            OutputStreamWriter wr = new OutputStreamWriter(con.getOutputStream());
-
-            // jsonData.put("message", "Hi there!");
-            wr.write(jsonData.toString());
-            wr.flush();
-
-            int status = con.getResponseCode();
-            con.disconnect();
-            return status;
-        } catch (Exception e) {
-            e.printStackTrace();
-            collectTelemetry("Exception", e);
-            return -1;
-        }
-    }
+//    private int postHTTP(String targetUrl, JSONObject jsonData) {
+//        collectTelemetry("HTTP", "POSTing to " + targetUrl);
+//        submitTelemetry();
+//        collectTelemetry("HTTP", "POSTing to " + targetUrl);
+//        try {
+//            URL url = new URL(targetUrl);
+//            HttpURLConnection con = (HttpURLConnection) url.openConnection();
+//            con.setConnectTimeout(1000);
+//            con.setReadTimeout(1000);
+//            con.setRequestMethod("POST");
+//            con.setRequestProperty("Content-Type", "application/json");
+//
+//            OutputStreamWriter wr = new OutputStreamWriter(con.getOutputStream());
+//
+//            // jsonData.put("message", "Hi there!");
+//            wr.write(jsonData.toString());
+//            wr.flush();
+//
+//            int status = con.getResponseCode();
+//            con.disconnect();
+//            return status;
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            collectTelemetry("Exception", e);
+//            return -1;
+//        }
+//    }
 
     private void setModeAll_stopAndReset() {
         FrontLeftMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
@@ -308,27 +319,29 @@ public class experimentalTeleop extends LinearOpMode {
 //    }
 
     private void update_telemetry() {
-        collectTelemetry("SECTION", "POWER");
+        collectTelemetry("Decorative", "SECTION", "POWER");
         // Front Motors
-        collectTelemetry("Front Left", FrontLeftMotor.getPower());
-        collectTelemetry("Front Right", FrontRightMotor.getPower());
+        collectTelemetry("Power", "Front Left", FrontLeftMotor.getPower());
+        collectTelemetry("Power", "Front Right", FrontRightMotor.getPower());
         // Back Motors
-        collectTelemetry("Back Left", BackLeftMotor.getPower());
-        collectTelemetry("Back Right", BackRightMotor.getPower());
+        collectTelemetry("Power", "Back Left", BackLeftMotor.getPower());
+        collectTelemetry("Power", "Back Right", BackRightMotor.getPower());
         // Manipulating Motors
-        collectTelemetry("Middle", mMotor.getPower());
-        collectTelemetry("High Actual", hMotor.getPower());
+        collectTelemetry("Power", "Middle", mMotor.getPower());
+        collectTelemetry("Power", "High Actual", hMotor.getPower());
         // POSITIONING
-        collectTelemetry("SECTION", "ARM POSITIONS");
-        collectTelemetry("Middle", mMotor.getCurrentPosition() + " / " + mMotor.getTargetPosition());
-        collectTelemetry("High", hMotor.getCurrentPosition() + " / " + hMotor.getTargetPosition());
-        collectTelemetry("SECTION", "WHEEL POSITIONS");
-        collectTelemetry("Front", FrontLeftMotor.getCurrentPosition() + "     " + FrontRightMotor.getCurrentPosition());
-        collectTelemetry("Back", BackLeftMotor.getCurrentPosition() + "     " + BackRightMotor.getCurrentPosition());
+        collectTelemetry("Position", "SECTION", "ARM POSITIONS");
+        collectTelemetry("Position", "Middle", mMotor.getCurrentPosition() + " / " + mMotor.getTargetPosition());
+        collectTelemetry("Position", "High", hMotor.getCurrentPosition() + " / " + hMotor.getTargetPosition());
+        collectTelemetry("Position", "SECTION", "WHEEL POSITIONS");
+        collectTelemetry("Position", "Front", FrontLeftMotor.getCurrentPosition() + "     " + FrontRightMotor.getCurrentPosition());
+        collectTelemetry("Position", "Back", BackLeftMotor.getCurrentPosition() + "     " + BackRightMotor.getCurrentPosition());
         // SERVOS& SENSORS
-        collectTelemetry("GrabbyPosition", clawServo.getPosition());
-        collectTelemetry("SweepyPower", sweeperServo.getPower());
-        collectTelemetry("DistanceSensor", "Back:" + turningDistanceSensor.getDistance(DistanceUnit.CM) + "cm | Right: " + rightDistanceSensor.getDistance(DistanceUnit.CM) + "cm.");
+        collectTelemetry("Servo", "GrabbyPosition", clawServo.getPosition());
+        collectTelemetry("Servo", "SweepyPower", sweeperServo.getPower());
+
+        collectTelemetry("sensors", "TurningDistSensorCM", turningDistanceSensor.getDistance(DistanceUnit.CM));
+        collectTelemetry("sensors", "RightDistSensorCM", rightDistanceSensor.getDistance(DistanceUnit.CM));
         // Send Updates
         submitTelemetry();
     }
@@ -441,24 +454,46 @@ public class experimentalTeleop extends LinearOpMode {
             blTargetPower = blTargetPower / maxCalculatedPower;
             brTargetPower = brTargetPower / maxCalculatedPower;
 
-            setHeadingDone = true;
+            targetHeadingRecorded = true;
         }
         // Activate heading corrections only when we're not steering
         if (joyRightX == 0) {
 
+            // The robot (with its inertia) will continue to turn for a bit more even after we lift
+            // our hands from the control and the turning power is cut. This code block checks if
+            // the joystick was just released  more than 0.2s (TURN_SETTLE_SECS) and decides if the
+            // heading correction should be activated.
+
+            // Essentially, it should go like this:
+            // 1. Upon initialization, the target heading is initialized as 0 (straight ahead), so
+            // targetHeadingRecorded is set to true;
+            // 2. The robot is moved using the left joystick (up/down/left/right). No right joystick
+            // was inputted = no intention to change heading = same target heading is still valid.
+            // 3. When right joy has input, the heading will be intentionally changed. The current
+            // target heading is now invalid. However, we can't record the new target heading yet as
+            // the joystick controls was just lifted and the robot still have turning motion. So, we
+            // simply note down that we still need to record the heading (targetHeadingRecorded = false)
+            // and record the current time for reference.
+            // 4. The next time we arrive at this function, we check if the heading was recorded yet.
+            // if we see that it's not, we check if the joystick has been released for more than 0.2s
+            // (TURN_SETTLE_SECS), and if so, we record the heading and mark that the heading is
+            // up-to-date. If not, we just do nothing, keeping the heading correction disabled until
+            // the timer has passed and the robot has (hopefully) stopped turning.
+
+
             if (rightJoyWasActive) {
                 rightJoyReleasedAt = getRuntime();
-                collectTelemetry("AngleTimer", "Started");
+                collectTelemetry("Corrections", "Angle Timer", "Started");
                 correctionDisabled = true;
-                setHeadingDone = false;
+                targetHeadingRecorded = false;
                 rightJoyWasActive = false;
-            } else if (!setHeadingDone) {
+            } else if (!targetHeadingRecorded) {
                 if ((getRuntime() - rightJoyReleasedAt) > TURN_SETTLE_SECS) {
                     targetHeading = getHeading();
-                    collectTelemetry("AngleTimer", "Done");
-                    setHeadingDone = true;
+                    collectTelemetry("Corrections", "Angle Timer", "Done");
+                    targetHeadingRecorded = true;
                 } else {
-                    collectTelemetry("AngleTimer", "Waiting");
+                    collectTelemetry("Corrections", "Angle Timer", "Waiting");
                     correctionDisabled = true;
                 }
             }
@@ -468,7 +503,7 @@ public class experimentalTeleop extends LinearOpMode {
                 headingDiff = getHeadingDiff(targetHeading, currentHeading);
                 if (Math.abs(headingDiff) < ANGLE_TOLERANCE) {
                     // Within Threshold
-                    collectTelemetry("Turning Correction", "N/A");
+                    collectTelemetry("Corrections","Turning Correction", "N/A");
                 } else if (headingDiff < 0) {
                     // Need to go right
                     double correctionSpeed = getCorrectionSpeed(flTargetPower);
@@ -476,7 +511,7 @@ public class experimentalTeleop extends LinearOpMode {
                     frTargetPower = frTargetPower + correctionSpeed;
                     blTargetPower = blTargetPower - correctionSpeed;
                     brTargetPower = brTargetPower + correctionSpeed;
-                    collectTelemetry("Turning Correction", "Adjusting Right");
+                    collectTelemetry("Corrections","Turning Correction", "Adjusting Right");
                 } else if (headingDiff > 0) {
                     // Need to go left
                     double correctionSpeed = getCorrectionSpeed(flTargetPower);
@@ -484,14 +519,14 @@ public class experimentalTeleop extends LinearOpMode {
                     frTargetPower = frTargetPower - correctionSpeed;
                     blTargetPower = blTargetPower + correctionSpeed;
                     brTargetPower = brTargetPower - correctionSpeed;
-                    collectTelemetry("Turning Correction", "Adjusting Right");
+                    collectTelemetry("Corrections","Turning Correction", "Adjusting Left");
                 }
             }
         } else {
             rightJoyWasActive = true;
             //Right joystick is being controlled.
         }
-        collectTelemetry("TargetHeading", targetHeading);
+        collectTelemetry("Corrections","TargetHeading", targetHeading);
 //        collectTelemetry("CurrentHeading", currentHeading);
         maxCalculatedPower = JavaUtil
                 .maxOfList(JavaUtil.createListWith(flTargetPower, frTargetPower, blTargetPower, brTargetPower));
