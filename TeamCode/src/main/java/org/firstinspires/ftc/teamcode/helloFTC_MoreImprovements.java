@@ -12,6 +12,8 @@ import org.firstinspires.ftc.robotcore.external.JavaUtil;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
+// DO: PS C:\Users\brsstudent\AppData\local\android\sdk\platform-tools> ./adb connect 192.168.43.1:5555
+
 @TeleOp(name = "helloAndroidStudio")
 public class helloFTC_MoreImprovements extends LinearOpMode {
 
@@ -76,7 +78,7 @@ public class helloFTC_MoreImprovements extends LinearOpMode {
 
 
   private void initializeIMU() {
-    imu_IMU.initialize(new IMU.Parameters(new RevHubOrientationOnRobot(RevHubOrientationOnRobot.LogoFacingDirection.FORWARD, RevHubOrientationOnRobot.UsbFacingDirection.LEFT)));
+    imu_IMU.initialize(new IMU.Parameters(new RevHubOrientationOnRobot(RevHubOrientationOnRobot.LogoFacingDirection.LEFT, RevHubOrientationOnRobot.UsbFacingDirection.UP)));
     imu_IMU.resetYaw();
   }
   

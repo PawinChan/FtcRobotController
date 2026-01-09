@@ -4,14 +4,11 @@ import com.google.gson.Gson;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DistanceSensor;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.Servo;
 import org.firstinspires.ftc.robotcore.external.JavaUtil;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
 
 import java.net.InetSocketAddress;
@@ -30,15 +27,16 @@ public class experimentalTeleop extends LinearOpMode {
     private DcMotor FrontRightMotor;
     private DcMotor BackLeftMotor;
     private DcMotor BackRightMotor;
-    private DcMotor hMotor;
-    private DcMotor mMotor;
+    private DcMotor scooperMotor;
+    private DcMotor flywheelMotor;
     private Servo distanceSensorServo;
     private IMU imu_IMU;
     private Servo clawServo;
-    private CRServo sweeperServo;
-    private DistanceSensor turningDistanceSensor;
-    private DistanceSensor rightDistanceSensor;
-    private DcMotor pulleyMotor;
+
+    private Servo trafficStopServo;
+//    private CRServo sweeperServo;
+//    private DistanceSensor turningDistanceSensor;
+//    private DistanceSensor rightDistanceSensor;
 
     double headingDiff;
     double targetHeading = 0;
@@ -51,8 +49,23 @@ public class experimentalTeleop extends LinearOpMode {
     int ANGLE_TOLERANCE = 1;
     double TURN_SETTLE_SECS = 0.2;
     boolean targetHeadingRecorded = true; //its set just above to 0 when the robot starts
-    WebSocketServer server = new TelemetryWebsocketsServer(new InetSocketAddress("0.0.0.0", 8765));
+
+    boolean websocketsTelemetryEnabled = false;
+    WebSocketServer server;
     LinkedHashMap<String, LinkedHashMap<String, Object>> telemetryDataDict = new LinkedHashMap<>();
+    int iceCreamUpPosition = 0;
+    enum IceCreamShortcutStatus {
+        CLOSING_GRIP,
+        MOVING_UP,
+        MOVING_DOWN_TO_PASS_STICK,
+        MOVING_DOWN_WHILE_RELEASING_GRIP,
+        IDLE
+    };
+
+    IceCreamShortcutStatus iceCreamShortcutStatus = IceCreamShortcutStatus.IDLE;
+    double iceCreamMotorMoveStartedAt;
+    Boolean iceCreamMotorMoveRegistered = false;
+
 
 
 //
@@ -72,15 +85,15 @@ public class experimentalTeleop extends LinearOpMode {
         FrontRightMotor = hardwareMap.get(DcMotor.class, "FrontRightMotor");
         BackLeftMotor = hardwareMap.get(DcMotor.class, "BackLeftMotor");
         BackRightMotor = hardwareMap.get(DcMotor.class, "BackRightMotor");
-        hMotor = hardwareMap.get(DcMotor.class, "hMotor");
-        mMotor = hardwareMap.get(DcMotor.class, "mMotor");
+        scooperMotor = hardwareMap.get(DcMotor.class, "scooperMotor");
+        flywheelMotor = hardwareMap.get(DcMotor.class, "flywheelMotor");
         distanceSensorServo = hardwareMap.get(Servo.class, "distanceSensorServo");
         imu_IMU = hardwareMap.get(IMU.class, "imu");
         clawServo = hardwareMap.get(Servo.class, "clawServo");
-        sweeperServo = hardwareMap.get(CRServo.class, "sweeperServo");
-        turningDistanceSensor = hardwareMap.get(DistanceSensor.class, "turningDistanceSensor");
-        rightDistanceSensor = hardwareMap.get(DistanceSensor.class, "rightDistanceSensor");
-        pulleyMotor = hardwareMap.get(DcMotor.class, "pulleyMotor");
+        trafficStopServo = hardwareMap.get(Servo.class, "trafficStopServo");
+//        sweeperServo = hardwareMap.get(CRServo.class, "sweeperServo");
+//        turningDistanceSensor = hardwareMap.get(DistanceSensor.class, "turningDistanceSensor");
+//        rightDistanceSensor = hardwareMap.get(DistanceSensor.class, "rightDistanceSensor");
 
         setup();
         collectTelemetry("Message", "Ready: ", "Waiting for start.");
@@ -90,6 +103,13 @@ public class experimentalTeleop extends LinearOpMode {
             distanceSensorServo.setPosition(0.25);
             while (opModeIsActive()) {
                 main_loop();
+            }
+            if (websocketsTelemetryEnabled) {
+                try {
+                    server.stop();
+                } catch (Exception e) {
+                    //pass
+                }
             }
         }
     }
@@ -121,17 +141,27 @@ public class experimentalTeleop extends LinearOpMode {
     private void submitTelemetry() {
         telemetry.update();
 
-        Gson gson = new Gson();
-        server.broadcast(gson.toJson(telemetryDataDict));
+        if (websocketsTelemetryEnabled) {
+            Gson gson = new Gson();
+            server.broadcast(gson.toJson(telemetryDataDict));
+        }
         telemetryDataDict.clear();
+
     }
 
     private void initializeIMU() {
-        imu_IMU.initialize(new IMU.Parameters(new RevHubOrientationOnRobot(RevHubOrientationOnRobot.LogoFacingDirection.FORWARD, RevHubOrientationOnRobot.UsbFacingDirection.LEFT)));
+        imu_IMU.initialize(new IMU.Parameters(new RevHubOrientationOnRobot(RevHubOrientationOnRobot.LogoFacingDirection.LEFT, RevHubOrientationOnRobot.UsbFacingDirection.UP)));
+//        imu_IMU.initialize(new IMU.Parameters(new RevHubOrientationOnRobot(RevHubOrientationOnRobot.LogoFacingDirection.FORWARD, RevHubOrientationOnRobot.UsbFacingDirection.LEFT)));
         imu_IMU.resetYaw();
     }
 
     private void setup() {
+        if (websocketsTelemetryEnabled) {
+           server = new TelemetryWebsocketsServer(new InetSocketAddress("0.0.0.0", 8765));
+        }
+
+        scooperMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+
         // Put initialization blocks here.
         telemetry.setNumDecimalPlaces(0, 4);
         // Make all moving motors float
@@ -148,12 +178,17 @@ public class experimentalTeleop extends LinearOpMode {
         FrontRightMotor.setDirection(DcMotor.Direction.REVERSE);
         BackRightMotor.setDirection(DcMotor.Direction.REVERSE);
         // Make all the manipulating motors brake
-        hMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        mMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        mMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        scooperMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        scooperMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+        flywheelMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         // Enter your comment here!
         initializeIMU();
-        server.start();
+        if (websocketsTelemetryEnabled) {
+            server.start();
+        }
+
+        iceCreamUpPosition = scooperMotor.getCurrentPosition();
     }
 
     private void main_loop() {
@@ -205,17 +240,14 @@ public class experimentalTeleop extends LinearOpMode {
         double coastingSpeed;
         currentSpeed = Math.abs(currentSpeed);
         if (currentSpeed == 0) {
-            return 0.04; //Make it correct quickly when it stops
+            return 0.05; //Make it correct quickly when it stops
         }
 
-        if (currentSpeed < 0.1) {
-            coastingSpeed = 0.025;
+        if (currentSpeed < 0.219512) {
+            coastingSpeed = currentSpeed / 2;
         }
-//        } else if (currentSpeed >= 0.1 && currentSpeed <=0.75) {
         else {
-            coastingSpeed = 0.085 * currentSpeed + 0.0165;
-//        } else {
-//            coastingSpeed = 0.08;
+            coastingSpeed = 0.09 * currentSpeed + 0.09;
         }
         collectTelemetry("Steering", "calculatedCorrectionSpeed", coastingSpeed);
         return coastingSpeed;
@@ -327,21 +359,20 @@ public class experimentalTeleop extends LinearOpMode {
         collectTelemetry("Power", "Back Left", BackLeftMotor.getPower());
         collectTelemetry("Power", "Back Right", BackRightMotor.getPower());
         // Manipulating Motors
-        collectTelemetry("Power", "Middle", mMotor.getPower());
-        collectTelemetry("Power", "High Actual", hMotor.getPower());
+        collectTelemetry("Power", "Scooper", scooperMotor.getPower());
+        collectTelemetry("Power", "Flywheel", flywheelMotor.getPower());
         // POSITIONING
         collectTelemetry("Position", "SECTION", "ARM POSITIONS");
-        collectTelemetry("Position", "Middle", mMotor.getCurrentPosition() + " / " + mMotor.getTargetPosition());
-        collectTelemetry("Position", "High", hMotor.getCurrentPosition() + " / " + hMotor.getTargetPosition());
+        collectTelemetry("Position", "Scooper", scooperMotor.getCurrentPosition() + " / " + scooperMotor.getTargetPosition());
         collectTelemetry("Position", "SECTION", "WHEEL POSITIONS");
         collectTelemetry("Position", "Front", FrontLeftMotor.getCurrentPosition() + "     " + FrontRightMotor.getCurrentPosition());
         collectTelemetry("Position", "Back", BackLeftMotor.getCurrentPosition() + "     " + BackRightMotor.getCurrentPosition());
         // SERVOS& SENSORS
         collectTelemetry("Servo", "GrabbyPosition", clawServo.getPosition());
-        collectTelemetry("Servo", "SweepyPower", sweeperServo.getPower());
+//        collectTelemetry("Servo", "SweepyPower", sweeperServo.getPower());
 
-        collectTelemetry("sensors", "TurningDistSensorCM", turningDistanceSensor.getDistance(DistanceUnit.CM));
-        collectTelemetry("sensors", "RightDistSensorCM", rightDistanceSensor.getDistance(DistanceUnit.CM));
+//        collectTelemetry("sensors", "TurningDistSensorCM", turningDistanceSensor.getDistance(DistanceUnit.CM));
+//        collectTelemetry("sensors", "RightDistSensorCM", rightDistanceSensor.getDistance(DistanceUnit.CM));
         // Send Updates
         submitTelemetry();
     }
@@ -355,62 +386,129 @@ public class experimentalTeleop extends LinearOpMode {
         double mTargetPower = 0;
         boolean mMotorAnchored = false;
         double hTargetPower = 0;
-        boolean hMotorAnchored = false;
+//        boolean hMotorAnchored = false;
 
-        // Check power boost
-        if (gamepad2.left_bumper) {
+//        // Check power boost
+//        if (gamepad1.left_bumper) {
             manipulatingPower = 1;
-        } else {
-            manipulatingPower = 0.5;
-        }
+//        } else {
+//            manipulatingPower = 0.5;
+//        }
         // Get input for extenders
-        if (gamepad2.dpad_up) {
-            mMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            mTargetPower = manipulatingPower;
-            mMotorAnchored = false;
-        } else if (gamepad2.dpad_down) {
-            mMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            mTargetPower = -manipulatingPower;
-            mMotorAnchored = false;
+        if (iceCreamShortcutStatus == IceCreamShortcutStatus.IDLE) {
+            if (gamepad1.dpad_up || gamepad1.left_bumper) {
+                //SHORTCUT: STEP 1 - close grip and move arm up
+                clawServo.setPosition(0.90);
+                iceCreamShortcutStatus = IceCreamShortcutStatus.CLOSING_GRIP;
+                scooperMotor.setTargetPosition(iceCreamUpPosition);
+                //Waiting a bit for arm to close, then start ice cream arm motor
+                sleep(250);
+                scooperMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+                scooperMotor.setPower(1);
+                iceCreamShortcutStatus = IceCreamShortcutStatus.MOVING_UP;
+            }
+            else if (gamepad1.dpad_down) {
+                // only run latter half of the shortcut to put down the scooper after initialization
+                iceCreamShortcutStatus = IceCreamShortcutStatus.MOVING_UP;
+                // The next loop it will jump to step 3
+            }
         } else {
-            if (!mMotorAnchored) {
-                mMotor.setTargetPosition(mMotor.getCurrentPosition());
-                mMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-                mTargetPower = 0.5;
-                mMotorAnchored = true;
+            if (scooperMotor.isBusy()) {
+                //SHORTCUT: STEP 2, 4, and 6
+//                if (!iceCreamMotorMoveRegistered) {
+//                    iceCreamMotorMoveStartedAt = getRuntime();
+//                    iceCreamMotorMoveRegistered = true;
+//                    telemetry.addData("IceCreamStatus", "Starting: " + iceCreamShortcutStatus.name());
+//
+//                } else {
+//                    if ((getRuntime() - iceCreamMotorMoveStartedAt) > 10) {
+//                        scooperMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+//                        scooperMotor.setPower(0);
+//                        telemetry.addData("IceCreamStatus", "Motor timed out:(");
+//                    } else {
+//                        //normal operation
+//                        telemetry.addData("IceCreamStatus", "Busy with: " + iceCreamShortcutStatus.name());
+//                    }
+//                }
+                telemetry.addData("IceCreamStatus", "Busy with: " + iceCreamShortcutStatus.name());
+
+            } else {
+                iceCreamMotorMoveRegistered = false;
+
+                //motor movement completed / not busy anymore -> Do next step
+
+                //If the last action was moving up, move it down past the stick..
+                if (iceCreamShortcutStatus == IceCreamShortcutStatus.MOVING_UP) {
+                    //SHORTCUT: STEP 3
+                    iceCreamShortcutStatus = IceCreamShortcutStatus.MOVING_DOWN_TO_PASS_STICK;
+                    scooperMotor.setTargetPosition(iceCreamUpPosition - 30);
+                    scooperMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+                    scooperMotor.setPower(-0.5);
+                //If the last action was moving down pass the stick, continue moving it while releasing grip to the ground
+                } else if (iceCreamShortcutStatus == IceCreamShortcutStatus.MOVING_DOWN_TO_PASS_STICK) {
+                    //Shortcut: STEP 5
+                    iceCreamShortcutStatus = IceCreamShortcutStatus.MOVING_DOWN_WHILE_RELEASING_GRIP;
+                    scooperMotor.setTargetPosition(iceCreamUpPosition - 70);
+                    scooperMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+                    scooperMotor.setPower(-0.5);
+
+                    clawServo.setPosition(0.5);
+                }
+                // If the last action was moving it down, there's nothing else to do -- mark as idle.
+                else if (iceCreamShortcutStatus == IceCreamShortcutStatus.MOVING_DOWN_WHILE_RELEASING_GRIP) {
+                    //SHORTCUT: STEP 7
+                    iceCreamShortcutStatus = IceCreamShortcutStatus.IDLE;
+                    scooperMotor.setPower(0);
+//                    scooperMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+                }
             }
         }
-        if (gamepad2.dpad_left) {
-            hMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            hTargetPower = -manipulatingPower;
-            hMotorAnchored = false;
-        } else if (gamepad2.dpad_right) {
-            hMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            hTargetPower = manipulatingPower;
-            hMotorAnchored = false;
-        } else {
-            if (!hMotorAnchored) {
-                hMotor.setTargetPosition(hMotor.getCurrentPosition());
-                hMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-                hTargetPower = 0.5;
-                hMotorAnchored = true;
-            }
-        }
-        // Move Extenders
-        mMotor.setPower(mTargetPower);
-        hMotor.setPower(hTargetPower);
+//        if (gamepad1.dpad_left) {
+//            hMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+//            hTargetPower = -manipulatingPower;
+//            hMotorAnchored = false;
+//        } else if (gamepad1.dpad_right) {
+//            hMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+//            hTargetPower = manipulatingPower;
+//            hMotorAnchored = false;
+//        } else {
+//            if (!hMotorAnchored) {
+//                // Uncomment 3 lines below to enable anchoring
+////                hMotor.setTargetPosition(hMotor.getCurrentPosition());
+////                hMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+////                hTargetPower = 0.5;
+//                hMotorAnchored = true;
+//            }
+//        }
+        // Move Extender
+//        hMotor.setPower(hTargetPower);
         // Deal with manipulators
-        if (gamepad2.x) {
-            clawServo.setPosition(0.75);
-        } else if (gamepad2.y) {
-            clawServo.setPosition(0.55);
+        if (gamepad1.dpad_left) {
+            //Close
+            clawServo.setPosition(0.90);
+        } else if (gamepad1.dpad_right) {
+            //Open
+            clawServo.setPosition(0.5);
         }
-        if (gamepad2.a) {
-            sweeperServo.setPower(1);
-        } else if (gamepad2.b) {
-            sweeperServo.setPower(-1);
+//        else {
+//            clawServo.setPosition((gamepad2.left_stick_y+1)/2);
+//        }
+        if (gamepad1.a) {
+            flywheelMotor.setPower(1);
+//            sweeperServo.setPower(1);
+        } else if (gamepad1.b) {
+            flywheelMotor.setPower(0);
         } else {
-            sweeperServo.setPower(0);
+            //Don't do anything.
+//            sweeperServo.setPower(0);
+        }
+
+        if (gamepad1.x) {
+            trafficStopServo.setPosition(0.3);
+        } else if (gamepad1.y) {
+            trafficStopServo.setPosition(0.15);
+        } else {
+            // pass
         }
     }
 
@@ -428,7 +526,7 @@ public class experimentalTeleop extends LinearOpMode {
         double joyRightX;
         double joyRightY;
         double maxCalculatedPower;
-        boolean correctionDisabled = false;
+        boolean correctionDisabled = true;
 
         if (gamepad1.right_bumper) {
             speedMulti = 0.2;
@@ -436,10 +534,10 @@ public class experimentalTeleop extends LinearOpMode {
             speedMulti = 1;
         }
         // Get Joystick Value
-        joyLeftX = -gamepad1.left_stick_x;
-        joyLeftY = gamepad1.left_stick_y;
-        joyRightX = -(gamepad1.right_stick_x * 0.8);
-        joyRightY = gamepad1.right_stick_y * 0.8;
+        joyLeftX = (float) scaleSpeed(-gamepad1.left_stick_x);
+        joyLeftY = (float) scaleSpeed(gamepad1.left_stick_y);
+        joyRightX = (float) scaleSpeed(-gamepad1.right_stick_x * 0.6);
+        joyRightY = gamepad1.right_stick_y * 0.6;
         // Set target motor powers based on x, y, and yaw
         flTargetPower = (joyLeftY + joyLeftX + joyRightX) * speedMulti;
         frTargetPower = (joyLeftY + -joyLeftX + -joyRightX) * speedMulti;
@@ -541,13 +639,13 @@ public class experimentalTeleop extends LinearOpMode {
         FrontRightMotor.setPower(frTargetPower);
         BackLeftMotor.setPower(blTargetPower);
         BackRightMotor.setPower(brTargetPower);
-        if (gamepad1.right_trigger > 0) {
-            pulleyMotor.setPower(gamepad1.right_trigger);
-        } else if (gamepad1.left_trigger > 0) {
-            pulleyMotor.setPower(-gamepad1.left_trigger);
-        } else {
-            pulleyMotor.setPower(0);
-        }
+//        if (gamepad1.right_trigger > 0) {
+//            pulleyMotor.setPower(gamepad1.right_trigger);
+//        } else if (gamepad1.left_trigger > 0) {
+//            pulleyMotor.setPower(-gamepad1.left_trigger);
+//        } else {
+//            pulleyMotor.setPower(0);
+//        }
     }
 
 //    private void update_values() {
