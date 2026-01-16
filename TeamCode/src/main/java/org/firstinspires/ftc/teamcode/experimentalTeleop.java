@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.Servo;
@@ -28,12 +29,18 @@ public class experimentalTeleop extends LinearOpMode {
     private DcMotor BackLeftMotor;
     private DcMotor BackRightMotor;
     private DcMotor scooperMotor;
-    private DcMotor flywheelMotor;
-    private Servo distanceSensorServo;
+    private DcMotor flywheelMotorL;
+    private DcMotor flywheelMotorR;
+//    private Servo distanceSensorServo;
     private IMU imu_IMU;
     private Servo clawServo;
 
     private Servo trafficStopServo;
+
+    private CRServo sweeperServoA;
+    private CRServo sweeperServoB;
+    private CRServo sweeperServoC;
+//    private CRServo sweeperServoD;
 //    private CRServo sweeperServo;
 //    private DistanceSensor turningDistanceSensor;
 //    private DistanceSensor rightDistanceSensor;
@@ -86,12 +93,16 @@ public class experimentalTeleop extends LinearOpMode {
         BackLeftMotor = hardwareMap.get(DcMotor.class, "BackLeftMotor");
         BackRightMotor = hardwareMap.get(DcMotor.class, "BackRightMotor");
         scooperMotor = hardwareMap.get(DcMotor.class, "scooperMotor");
-        flywheelMotor = hardwareMap.get(DcMotor.class, "flywheelMotor");
-        distanceSensorServo = hardwareMap.get(Servo.class, "distanceSensorServo");
+        flywheelMotorL = hardwareMap.get(DcMotor.class, "flywheelMotorL");
+        flywheelMotorR = hardwareMap.get(DcMotor.class, "flywheelMotorR");
+//        distanceSensorServo = hardwareMap.get(Servo.class, "distanceSensorServo");
         imu_IMU = hardwareMap.get(IMU.class, "imu");
         clawServo = hardwareMap.get(Servo.class, "clawServo");
         trafficStopServo = hardwareMap.get(Servo.class, "trafficStopServo");
-//        sweeperServo = hardwareMap.get(CRServo.class, "sweeperServo");
+        sweeperServoA = hardwareMap.get(CRServo.class, "sweeperServoA");
+        sweeperServoB = hardwareMap.get(CRServo.class, "sweeperServoB");
+        sweeperServoC = hardwareMap.get(CRServo.class, "sweeperServoC");
+//        sweeperServoD = hardwareMap.get(CRServo.class, "sweeperServoD");
 //        turningDistanceSensor = hardwareMap.get(DistanceSensor.class, "turningDistanceSensor");
 //        rightDistanceSensor = hardwareMap.get(DistanceSensor.class, "rightDistanceSensor");
 
@@ -100,7 +111,7 @@ public class experimentalTeleop extends LinearOpMode {
         submitTelemetry();
         waitForStart();
         if (opModeIsActive()) {
-            distanceSensorServo.setPosition(0.25);
+//            distanceSensorServo.setPosition(0.25);
             while (opModeIsActive()) {
                 main_loop();
             }
@@ -133,7 +144,7 @@ public class experimentalTeleop extends LinearOpMode {
             telemetryDataDict.put(category, new LinkedHashMap<String, Object>());
         }
 
-        telemetryDataDict.get(category).put(key, value);
+        telemetryDataDict.get(category).put(key, valueToAdd);
         //Add it to the controller screen too.
         telemetry.addData(key, value);
     }
@@ -181,7 +192,8 @@ public class experimentalTeleop extends LinearOpMode {
         scooperMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         scooperMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
-        flywheelMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        flywheelMotorL.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        flywheelMotorR.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         // Enter your comment here!
         initializeIMU();
         if (websocketsTelemetryEnabled) {
@@ -351,6 +363,7 @@ public class experimentalTeleop extends LinearOpMode {
 //    }
 
     private void update_telemetry() {
+//        DecimalFormat df = new DecimalFormat("0.00");
         collectTelemetry("Decorative", "SECTION", "POWER");
         // Front Motors
         collectTelemetry("Power", "Front Left", FrontLeftMotor.getPower());
@@ -360,7 +373,7 @@ public class experimentalTeleop extends LinearOpMode {
         collectTelemetry("Power", "Back Right", BackRightMotor.getPower());
         // Manipulating Motors
         collectTelemetry("Power", "Scooper", scooperMotor.getPower());
-        collectTelemetry("Power", "Flywheel", flywheelMotor.getPower());
+        collectTelemetry("Power", "Flywheel", flywheelMotorL.getPower() + " & " + flywheelMotorR.getPower());
         // POSITIONING
         collectTelemetry("Position", "SECTION", "ARM POSITIONS");
         collectTelemetry("Position", "Scooper", scooperMotor.getCurrentPosition() + " / " + scooperMotor.getTargetPosition());
@@ -369,7 +382,7 @@ public class experimentalTeleop extends LinearOpMode {
         collectTelemetry("Position", "Back", BackLeftMotor.getCurrentPosition() + "     " + BackRightMotor.getCurrentPosition());
         // SERVOS& SENSORS
         collectTelemetry("Servo", "GrabbyPosition", clawServo.getPosition());
-//        collectTelemetry("Servo", "SweepyPower", sweeperServo.getPower());
+        collectTelemetry("Servo", "SweepyPower", sweeperServoA.getPower() + " & " + sweeperServoB.getPower() + " & "  + sweeperServoC.getPower());// + " & " + sweeperServoD.getPower());
 
 //        collectTelemetry("sensors", "TurningDistSensorCM", turningDistanceSensor.getDistance(DistanceUnit.CM));
 //        collectTelemetry("sensors", "RightDistSensorCM", rightDistanceSensor.getDistance(DistanceUnit.CM));
@@ -493,20 +506,32 @@ public class experimentalTeleop extends LinearOpMode {
 //        else {
 //            clawServo.setPosition((gamepad2.left_stick_y+1)/2);
 //        }
-        if (gamepad1.a) {
-            flywheelMotor.setPower(1);
+        if (gamepad1.x) {
+            flywheelMotorL.setPower(0.9);
+            flywheelMotorR.setPower(-0.9);
 //            sweeperServo.setPower(1);
-        } else if (gamepad1.b) {
-            flywheelMotor.setPower(0);
+        } else if (gamepad1.y) {
+            flywheelMotorL.setPower(0);
+            flywheelMotorR.setPower(0);
         } else {
             //Don't do anything.
 //            sweeperServo.setPower(0);
         }
 
-        if (gamepad1.x) {
-            trafficStopServo.setPosition(0.3);
-        } else if (gamepad1.y) {
-            trafficStopServo.setPosition(0.15);
+        if (gamepad1.a) {
+            sweeperServoA.setPower(1);
+            sweeperServoB.setPower(1);
+            sweeperServoC.setPower(1);
+//            sweeperServoD.setPower(0);
+//            trafficStopServo.setPosition(0.3);
+        } else if (gamepad1.b) {
+//            trafficStopServo.setPosition(0.15);
+            sweeperServoA.setPower(0);
+            sweeperServoB.setPower(0);
+            sweeperServoC.setPower(0);
+//            sweeperServoD.setPower(0);
+
+
         } else {
             // pass
         }
