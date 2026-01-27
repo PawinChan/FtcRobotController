@@ -6,40 +6,48 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DistanceSensor;
 import com.qualcomm.robotcore.hardware.IMU;
-import com.qualcomm.robotcore.hardware.Servo;
+
 import org.firstinspires.ftc.robotcore.external.JavaUtil;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 
 
 import java.net.InetSocketAddress;
 
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.teamcode.util.TelemetryWebsocketsServer;
+import org.firstinspires.ftc.vision.VisionPortal;
+import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
+import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import org.java_websocket.server.WebSocketServer;
 //import org.json.simple.JSONObject;
 
 import java.text.DecimalFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 
-@TeleOp(name = "helloAndroidStudio2")
-public class experimentalTeleop extends LinearOpMode {
+@TeleOp(name = "AndroidStudioTeleop")
+public class teleop extends LinearOpMode {
+    private AprilTagProcessor myAprilTagProcessor;
+
+    private VisionPortal visionPortal;
 
     private DcMotor FrontLeftMotor;
     private DcMotor FrontRightMotor;
     private DcMotor BackLeftMotor;
     private DcMotor BackRightMotor;
-    private DcMotor scooperMotor;
     private DcMotor flywheelMotorL;
     private DcMotor flywheelMotorR;
 //    private Servo distanceSensorServo;
     private IMU imu_IMU;
-    private Servo clawServo;
-
-    private Servo trafficStopServo;
 
     private CRServo sweeperServoA;
     private CRServo sweeperServoB;
     private CRServo sweeperServoC;
+    private DistanceSensor backDistanceSensor;
+
 //    private CRServo sweeperServoD;
 //    private CRServo sweeperServo;
 //    private DistanceSensor turningDistanceSensor;
@@ -60,19 +68,6 @@ public class experimentalTeleop extends LinearOpMode {
     boolean websocketsTelemetryEnabled = false;
     WebSocketServer server;
     LinkedHashMap<String, LinkedHashMap<String, Object>> telemetryDataDict = new LinkedHashMap<>();
-    int iceCreamUpPosition = 0;
-    enum IceCreamShortcutStatus {
-        CLOSING_GRIP,
-        MOVING_UP,
-        MOVING_DOWN_TO_PASS_STICK,
-        MOVING_DOWN_WHILE_RELEASING_GRIP,
-        IDLE
-    };
-
-    IceCreamShortcutStatus iceCreamShortcutStatus = IceCreamShortcutStatus.IDLE;
-    double iceCreamMotorMoveStartedAt;
-    Boolean iceCreamMotorMoveRegistered = false;
-
 
 
 //
@@ -88,27 +83,9 @@ public class experimentalTeleop extends LinearOpMode {
 
     @Override
     public void runOpMode() {
-        FrontLeftMotor = hardwareMap.get(DcMotor.class, "FrontLeftMotor");
-        FrontRightMotor = hardwareMap.get(DcMotor.class, "FrontRightMotor");
-        BackLeftMotor = hardwareMap.get(DcMotor.class, "BackLeftMotor");
-        BackRightMotor = hardwareMap.get(DcMotor.class, "BackRightMotor");
-        scooperMotor = hardwareMap.get(DcMotor.class, "scooperMotor");
-        flywheelMotorL = hardwareMap.get(DcMotor.class, "flywheelMotorL");
-        flywheelMotorR = hardwareMap.get(DcMotor.class, "flywheelMotorR");
-//        distanceSensorServo = hardwareMap.get(Servo.class, "distanceSensorServo");
-        imu_IMU = hardwareMap.get(IMU.class, "imu");
-        clawServo = hardwareMap.get(Servo.class, "clawServo");
-        trafficStopServo = hardwareMap.get(Servo.class, "trafficStopServo");
-        sweeperServoA = hardwareMap.get(CRServo.class, "sweeperServoA");
-        sweeperServoB = hardwareMap.get(CRServo.class, "sweeperServoB");
-        sweeperServoC = hardwareMap.get(CRServo.class, "sweeperServoC");
-//        sweeperServoD = hardwareMap.get(CRServo.class, "sweeperServoD");
-//        turningDistanceSensor = hardwareMap.get(DistanceSensor.class, "turningDistanceSensor");
-//        rightDistanceSensor = hardwareMap.get(DistanceSensor.class, "rightDistanceSensor");
+
 
         setup();
-        collectTelemetry("Message", "Ready: ", "Waiting for start.");
-        submitTelemetry();
         waitForStart();
         if (opModeIsActive()) {
 //            distanceSensorServo.setPosition(0.25);
@@ -160,22 +137,31 @@ public class experimentalTeleop extends LinearOpMode {
 
     }
 
+    private void initializeHardware() {
+        FrontLeftMotor = hardwareMap.get(DcMotor.class, "FrontLeftMotor");
+        FrontRightMotor = hardwareMap.get(DcMotor.class, "FrontRightMotor");
+        BackLeftMotor = hardwareMap.get(DcMotor.class, "BackLeftMotor");
+        BackRightMotor = hardwareMap.get(DcMotor.class, "BackRightMotor");
+        flywheelMotorL = hardwareMap.get(DcMotor.class, "flywheelMotorL");
+        flywheelMotorR = hardwareMap.get(DcMotor.class, "flywheelMotorR");
+//        distanceSensorServo = hardwareMap.get(Servo.class, "distanceSensorServo");
+        imu_IMU = hardwareMap.get(IMU.class, "imu");
+        sweeperServoA = hardwareMap.get(CRServo.class, "sweeperServoA");
+        sweeperServoB = hardwareMap.get(CRServo.class, "sweeperServoB");
+        sweeperServoC = hardwareMap.get(CRServo.class, "sweeperServoC");
+
+        backDistanceSensor = hardwareMap.get(DistanceSensor.class, "backDistanceSensor");
+        //        sweeperServoD = hardwareMap.get(CRServo.class, "sweeperServoD");
+//        turningDistanceSensor = hardwareMap.get(DistanceSensor.class, "turningDistanceSensor");
+//        rightDistanceSensor = hardwareMap.get(DistanceSensor.class, "rightDistanceSensor");
+    }
     private void initializeIMU() {
-        imu_IMU.initialize(new IMU.Parameters(new RevHubOrientationOnRobot(RevHubOrientationOnRobot.LogoFacingDirection.LEFT, RevHubOrientationOnRobot.UsbFacingDirection.UP)));
+        imu_IMU.initialize(new IMU.Parameters(new RevHubOrientationOnRobot(RevHubOrientationOnRobot.LogoFacingDirection.UP, RevHubOrientationOnRobot.UsbFacingDirection.BACKWARD)));
 //        imu_IMU.initialize(new IMU.Parameters(new RevHubOrientationOnRobot(RevHubOrientationOnRobot.LogoFacingDirection.FORWARD, RevHubOrientationOnRobot.UsbFacingDirection.LEFT)));
         imu_IMU.resetYaw();
     }
 
-    private void setup() {
-        if (websocketsTelemetryEnabled) {
-           server = new TelemetryWebsocketsServer(new InetSocketAddress("0.0.0.0", 8765));
-        }
-
-        scooperMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-
-        // Put initialization blocks here.
-        telemetry.setNumDecimalPlaces(0, 4);
-        // Make all moving motors float
+    private void configureMotors() {
         FrontLeftMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         FrontRightMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         BackLeftMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
@@ -189,25 +175,34 @@ public class experimentalTeleop extends LinearOpMode {
         FrontRightMotor.setDirection(DcMotor.Direction.REVERSE);
         BackRightMotor.setDirection(DcMotor.Direction.REVERSE);
         // Make all the manipulating motors brake
-        scooperMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        scooperMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
         flywheelMotorL.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         flywheelMotorR.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
-        // Enter your comment here!
+
+        sweeperServoA.setPower(0);
+        sweeperServoB.setPower(0);
+        sweeperServoC.setPower(0);
+    }
+
+    private void setup() {
+        initializeHardware();
         initializeIMU();
+        initAprilTag();
+        configureMotors();
+        telemetry.setNumDecimalPlaces(0, 4);
         if (websocketsTelemetryEnabled) {
+           server = new TelemetryWebsocketsServer(new InetSocketAddress("0.0.0.0", 8765));
             server.start();
         }
-
-        iceCreamUpPosition = scooperMotor.getCurrentPosition();
+        collectTelemetry("Message", "Ready: ", "Waiting for start.");
+        submitTelemetry();
     }
 
     private void main_loop() {
         update_manipulators();
         update_movers();
-//        update_values();
         update_telemetry();
+        telemetryAprilTag();
 
     }
 
@@ -264,54 +259,7 @@ public class experimentalTeleop extends LinearOpMode {
         collectTelemetry("Steering", "calculatedCorrectionSpeed", coastingSpeed);
         return coastingSpeed;
     }
-    // SECTION: EXPERIMENTAL CODE
 
-//    private int getHTTP(String targetUrl) {
-//        collectTelemetry("HTTP", "GETting " + targetUrl);
-//        submitTelemetry();
-//        collectTelemetry("HTTP", "GETting " + targetUrl);
-//        try {
-//            URL url = new URL(targetUrl);
-//            HttpURLConnection con = (HttpURLConnection) url.openConnection();
-//            con.setRequestMethod("GET");
-//            con.setRequestProperty("Content-Type", "application/json");
-//            int status = con.getResponseCode();
-//            con.disconnect();
-//            return status;
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//            collectTelemetry("Exception", e);
-//            return -1;
-//        }
-//    }
-
-//    private int postHTTP(String targetUrl, JSONObject jsonData) {
-//        collectTelemetry("HTTP", "POSTing to " + targetUrl);
-//        submitTelemetry();
-//        collectTelemetry("HTTP", "POSTing to " + targetUrl);
-//        try {
-//            URL url = new URL(targetUrl);
-//            HttpURLConnection con = (HttpURLConnection) url.openConnection();
-//            con.setConnectTimeout(1000);
-//            con.setReadTimeout(1000);
-//            con.setRequestMethod("POST");
-//            con.setRequestProperty("Content-Type", "application/json");
-//
-//            OutputStreamWriter wr = new OutputStreamWriter(con.getOutputStream());
-//
-//            // jsonData.put("message", "Hi there!");
-//            wr.write(jsonData.toString());
-//            wr.flush();
-//
-//            int status = con.getResponseCode();
-//            con.disconnect();
-//            return status;
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//            collectTelemetry("Exception", e);
-//            return -1;
-//        }
-//    }
 
     private void setModeAll_stopAndReset() {
         FrontLeftMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
@@ -331,37 +279,89 @@ public class experimentalTeleop extends LinearOpMode {
         setModeAll_stopAndReset();
         setModeAll_runUsingEncoder();
     }
+    private void initAprilTag() {
 
-//    private void sendDataAndReset() {
-//        String LOG_ENDPOINT = "http://192.168.43.151:8000/addPoint";
-//        JSONObject jsonData = new JSONObject();
-//        JSONObject motorTicks = new JSONObject();
-//        JSONObject distanceSensors = new JSONObject();
-//
-//        motorTicks.put("flMotorTicks", FrontLeftMotor.getCurrentPosition());
-//        motorTicks.put("frMotorTicks", FrontRightMotor.getCurrentPosition());
-//        motorTicks.put("blMotorTicks", BackLeftMotor.getCurrentPosition());
-//        motorTicks.put("brMotorTicks", BackRightMotor.getCurrentPosition());
-//
-//        distanceSensors.put("leftDistance", null);
-//        distanceSensors.put("backDistance", turningDistanceSensor.getDistance(DistanceUnit.CM));
-//        distanceSensors.put("rightDistance", rightDistanceSensor.getDistance(DistanceUnit.CM));
-//
-//        jsonData.put("motorTicks", motorTicks);
-//        jsonData.put("distanceSensors", distanceSensors);
-//
-//        postHTTP(LOG_ENDPOINT, jsonData);
-//        resetMotors();
-//    }
+        // Create the AprilTag processor.
+        myAprilTagProcessor = AprilTagProcessor.easyCreateWithDefaults();
 
-//    private void sendCurrentPower() {
-//        String LOG_ENDPOINT = "http://192.168.43.151:8000/addPoint";
-//        JSONObject jsonData = new JSONObject();
-//        JSONObject motorTicks = new JSONObject();
-//        JSONObject distanceSensors = new JSONObject();
-//
-//    }
+                // The following default settings are available to un-comment and edit as needed.
+                //.setDrawAxes(false)
+                //.setDrawCubeProjection(false)
+                //.setDrawTagOutline(true)
+                //.setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11)
+                //.setTagLibrary(AprilTagGameDatabase.getCenterStageTagLibrary())
+                //.setOutputUnits(DistanceUnit.INCH, AngleUnit.DEGREES)
 
+                // == CAMERA CALIBRATION ==
+                // If you do not manually specify calibration parameters, the SDK will attempt
+                // to load a predefined calibration for your camera.
+                //.setLensIntrinsics(578.272, 578.272, 402.145, 221.506)
+                // ... these parameters are fx, fy, cx, cy.
+
+                //.build();
+
+        // Adjust Image Decimation to trade-off detection-range for detection-rate.
+        // eg: Some typical detection data using a Logitech C920 WebCam
+        // Decimation = 1 ..  Detect 2" Tag from 10 feet away at 10 Frames per second
+        // Decimation = 2 ..  Detect 2" Tag from 6  feet away at 22 Frames per second
+        // Decimation = 3 ..  Detect 2" Tag from 4  feet away at 30 Frames Per Second (default)
+        // Decimation = 3 ..  Detect 5" Tag from 10 feet away at 30 Frames Per Second (default)
+        // Note: Decimation can be changed on-the-fly to adapt during a match.
+        //aprilTag.setDecimation(3);
+
+        // Create the vision portal by using a builder.
+        VisionPortal.Builder builder = new VisionPortal.Builder();
+
+        // Set the camera (webcam vs. built-in RC phone camera).
+        builder.setCamera(hardwareMap.get(WebcamName.class, "LogitechC310"));
+        // Choose a camera resolution. Not all cameras support all resolutions.
+        //builder.setCameraResolution(new Size(640, 480));
+
+        // Enable the RC preview (LiveView).  Set "false" to omit camera monitoring.
+        builder.enableLiveView(true);
+
+        // Set the stream format; MJPEG uses less bandwidth than default YUY2.
+        builder.setStreamFormat(VisionPortal.StreamFormat.MJPEG);
+
+        // Choose whether or not LiveView stops if no processors are enabled.
+        // If set "true", monitor shows solid orange screen if no processors enabled.
+        // If set "false", monitor shows camera view without annotations.
+        //builder.setAutoStopLiveView(false);
+
+        // Set and enable the processor.
+        builder.addProcessor(myAprilTagProcessor);
+
+        // Build the Vision Portal, using the above settings.
+        visionPortal = builder.build();
+
+        // Disable or re-enable the aprilTag processor at any time.
+        //visionPortal.setProcessorEnabled(aprilTag, true);
+
+    }   // end method initAprilTag()
+    private void telemetryAprilTag() {
+
+        List<AprilTagDetection> currentDetections = myAprilTagProcessor.getDetections();
+        telemetry.addData("# AprilTags Detected", currentDetections.size());
+
+        // Step through the list of detections and display info for each one.
+        for (AprilTagDetection detection : currentDetections) {
+            if (detection.metadata != null) {
+                telemetry.addLine(String.format("\n==== (ID %d) %s", detection.id, detection.metadata.name));
+                telemetry.addLine(String.format("XYZ %6.1f %6.1f %6.1f  (inch)", detection.ftcPose.x, detection.ftcPose.y, detection.ftcPose.z));
+                telemetry.addLine(String.format("PRY %6.1f %6.1f %6.1f  (deg)", detection.ftcPose.pitch, detection.ftcPose.roll, detection.ftcPose.yaw));
+                telemetry.addLine(String.format("RBE %6.1f %6.1f %6.1f  (inch, deg, deg)", detection.ftcPose.range, detection.ftcPose.bearing, detection.ftcPose.elevation));
+            } else {
+                telemetry.addLine(String.format("\n==== (ID %d) Unknown", detection.id));
+                telemetry.addLine(String.format("Center %6.0f %6.0f   (pixels)", detection.center.x, detection.center.y));
+            }
+        }   // end for() loop
+
+        // Add "key" information to telemetry
+        telemetry.addLine("\nkey:\nXYZ = X (Right), Y (Forward), Z (Up) dist.");
+        telemetry.addLine("PRY = Pitch, Roll & Yaw (XYZ Rotation)");
+        telemetry.addLine("RBE = Range, Bearing & Elevation");
+
+    }
     private void update_telemetry() {
 //        DecimalFormat df = new DecimalFormat("0.00");
         collectTelemetry("Decorative", "SECTION", "POWER");
@@ -372,20 +372,19 @@ public class experimentalTeleop extends LinearOpMode {
         collectTelemetry("Power", "Back Left", BackLeftMotor.getPower());
         collectTelemetry("Power", "Back Right", BackRightMotor.getPower());
         // Manipulating Motors
-        collectTelemetry("Power", "Scooper", scooperMotor.getPower());
         collectTelemetry("Power", "Flywheel", flywheelMotorL.getPower() + " & " + flywheelMotorR.getPower());
         // POSITIONING
-        collectTelemetry("Position", "SECTION", "ARM POSITIONS");
-        collectTelemetry("Position", "Scooper", scooperMotor.getCurrentPosition() + " / " + scooperMotor.getTargetPosition());
+//        collectTelemetry("Position", "SECTION", "ARM POSITIONS");
         collectTelemetry("Position", "SECTION", "WHEEL POSITIONS");
         collectTelemetry("Position", "Front", FrontLeftMotor.getCurrentPosition() + "     " + FrontRightMotor.getCurrentPosition());
         collectTelemetry("Position", "Back", BackLeftMotor.getCurrentPosition() + "     " + BackRightMotor.getCurrentPosition());
         // SERVOS& SENSORS
-        collectTelemetry("Servo", "GrabbyPosition", clawServo.getPosition());
         collectTelemetry("Servo", "SweepyPower", sweeperServoA.getPower() + " & " + sweeperServoB.getPower() + " & "  + sweeperServoC.getPower());// + " & " + sweeperServoD.getPower());
+        collectTelemetry("Distance", "Back", backDistanceSensor.getDistance(DistanceUnit.CM));
 
 //        collectTelemetry("sensors", "TurningDistSensorCM", turningDistanceSensor.getDistance(DistanceUnit.CM));
 //        collectTelemetry("sensors", "RightDistSensorCM", rightDistanceSensor.getDistance(DistanceUnit.CM));
+
         // Send Updates
         submitTelemetry();
     }
@@ -393,143 +392,27 @@ public class experimentalTeleop extends LinearOpMode {
 
     private void update_manipulators() {
 
-        //Manipulators use gamepad 2
-
-        double manipulatingPower = 0;
-        double mTargetPower = 0;
-        boolean mMotorAnchored = false;
-        double hTargetPower = 0;
-//        boolean hMotorAnchored = false;
-
-//        // Check power boost
-//        if (gamepad1.left_bumper) {
-            manipulatingPower = 1;
-//        } else {
-//            manipulatingPower = 0.5;
-//        }
-        // Get input for extenders
-        if (iceCreamShortcutStatus == IceCreamShortcutStatus.IDLE) {
-            if (gamepad1.dpad_up || gamepad1.left_bumper) {
-                //SHORTCUT: STEP 1 - close grip and move arm up
-                clawServo.setPosition(0.90);
-                iceCreamShortcutStatus = IceCreamShortcutStatus.CLOSING_GRIP;
-                scooperMotor.setTargetPosition(iceCreamUpPosition);
-                //Waiting a bit for arm to close, then start ice cream arm motor
-                sleep(250);
-                scooperMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-                scooperMotor.setPower(1);
-                iceCreamShortcutStatus = IceCreamShortcutStatus.MOVING_UP;
-            }
-            else if (gamepad1.dpad_down) {
-                // only run latter half of the shortcut to put down the scooper after initialization
-                iceCreamShortcutStatus = IceCreamShortcutStatus.MOVING_UP;
-                // The next loop it will jump to step 3
-            }
-        } else {
-            if (scooperMotor.isBusy()) {
-                //SHORTCUT: STEP 2, 4, and 6
-//                if (!iceCreamMotorMoveRegistered) {
-//                    iceCreamMotorMoveStartedAt = getRuntime();
-//                    iceCreamMotorMoveRegistered = true;
-//                    telemetry.addData("IceCreamStatus", "Starting: " + iceCreamShortcutStatus.name());
-//
-//                } else {
-//                    if ((getRuntime() - iceCreamMotorMoveStartedAt) > 10) {
-//                        scooperMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-//                        scooperMotor.setPower(0);
-//                        telemetry.addData("IceCreamStatus", "Motor timed out:(");
-//                    } else {
-//                        //normal operation
-//                        telemetry.addData("IceCreamStatus", "Busy with: " + iceCreamShortcutStatus.name());
-//                    }
-//                }
-                telemetry.addData("IceCreamStatus", "Busy with: " + iceCreamShortcutStatus.name());
-
-            } else {
-                iceCreamMotorMoveRegistered = false;
-
-                //motor movement completed / not busy anymore -> Do next step
-
-                //If the last action was moving up, move it down past the stick..
-                if (iceCreamShortcutStatus == IceCreamShortcutStatus.MOVING_UP) {
-                    //SHORTCUT: STEP 3
-                    iceCreamShortcutStatus = IceCreamShortcutStatus.MOVING_DOWN_TO_PASS_STICK;
-                    scooperMotor.setTargetPosition(iceCreamUpPosition - 30);
-                    scooperMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-                    scooperMotor.setPower(-0.5);
-                //If the last action was moving down pass the stick, continue moving it while releasing grip to the ground
-                } else if (iceCreamShortcutStatus == IceCreamShortcutStatus.MOVING_DOWN_TO_PASS_STICK) {
-                    //Shortcut: STEP 5
-                    iceCreamShortcutStatus = IceCreamShortcutStatus.MOVING_DOWN_WHILE_RELEASING_GRIP;
-                    scooperMotor.setTargetPosition(iceCreamUpPosition - 70);
-                    scooperMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-                    scooperMotor.setPower(-0.5);
-
-                    clawServo.setPosition(0.5);
-                }
-                // If the last action was moving it down, there's nothing else to do -- mark as idle.
-                else if (iceCreamShortcutStatus == IceCreamShortcutStatus.MOVING_DOWN_WHILE_RELEASING_GRIP) {
-                    //SHORTCUT: STEP 7
-                    iceCreamShortcutStatus = IceCreamShortcutStatus.IDLE;
-                    scooperMotor.setPower(0);
-//                    scooperMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-                }
-            }
-        }
-//        if (gamepad1.dpad_left) {
-//            hMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-//            hTargetPower = -manipulatingPower;
-//            hMotorAnchored = false;
-//        } else if (gamepad1.dpad_right) {
-//            hMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-//            hTargetPower = manipulatingPower;
-//            hMotorAnchored = false;
-//        } else {
-//            if (!hMotorAnchored) {
-//                // Uncomment 3 lines below to enable anchoring
-////                hMotor.setTargetPosition(hMotor.getCurrentPosition());
-////                hMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-////                hTargetPower = 0.5;
-//                hMotorAnchored = true;
-//            }
-//        }
-        // Move Extender
-//        hMotor.setPower(hTargetPower);
-        // Deal with manipulators
-        if (gamepad1.dpad_left) {
-            //Close
-            clawServo.setPosition(0.90);
-        } else if (gamepad1.dpad_right) {
-            //Open
-            clawServo.setPosition(0.5);
-        }
-//        else {
-//            clawServo.setPosition((gamepad2.left_stick_y+1)/2);
-//        }
         if (gamepad1.x) {
-            flywheelMotorL.setPower(0.9);
-            flywheelMotorR.setPower(-0.9);
+            flywheelMotorL.setPower(0.8);
+            flywheelMotorR.setPower(-0.8);
 //            sweeperServo.setPower(1);
         } else if (gamepad1.y) {
             flywheelMotorL.setPower(0);
             flywheelMotorR.setPower(0);
         } else {
             //Don't do anything.
-//            sweeperServo.setPower(0);
         }
 
         if (gamepad1.a) {
-            sweeperServoA.setPower(1);
-            sweeperServoB.setPower(1);
-            sweeperServoC.setPower(1);
+            sweeperServoA.setPower(-1);
+            sweeperServoB.setPower(-1);
+            sweeperServoC.setPower(-1);
 //            sweeperServoD.setPower(0);
-//            trafficStopServo.setPosition(0.3);
         } else if (gamepad1.b) {
 //            trafficStopServo.setPosition(0.15);
             sweeperServoA.setPower(0);
             sweeperServoB.setPower(0);
             sweeperServoC.setPower(0);
-//            sweeperServoD.setPower(0);
 
 
         } else {
@@ -551,17 +434,17 @@ public class experimentalTeleop extends LinearOpMode {
         double joyRightX;
         double joyRightY;
         double maxCalculatedPower;
-        boolean correctionDisabled = true;
+        boolean correctionDisabled = false;
 
         if (gamepad1.right_bumper) {
-            speedMulti = 0.2;
+            speedMulti = 0.3;
         } else {
             speedMulti = 1;
         }
         // Get Joystick Value
-        joyLeftX = (float) scaleSpeed(-gamepad1.left_stick_x);
-        joyLeftY = (float) scaleSpeed(gamepad1.left_stick_y);
-        joyRightX = (float) scaleSpeed(-gamepad1.right_stick_x * 0.6);
+        joyLeftX = (float) scaleSpeed(-gamepad1.left_stick_x * 0.9);
+        joyLeftY = (float) scaleSpeed(gamepad1.left_stick_y * 0.9);
+        joyRightX = (float) scaleSpeed(-gamepad1.right_stick_x * 0.4);
         joyRightY = gamepad1.right_stick_y * 0.6;
         // Set target motor powers based on x, y, and yaw
         flTargetPower = (joyLeftY + joyLeftX + joyRightX) * speedMulti;
@@ -629,7 +512,7 @@ public class experimentalTeleop extends LinearOpMode {
                     collectTelemetry("Corrections","Turning Correction", "N/A");
                 } else if (headingDiff < 0) {
                     // Need to go right
-                    double correctionSpeed = getCorrectionSpeed(flTargetPower);
+                    double correctionSpeed = getCorrectionSpeed(flTargetPower) * 0.8;
                     flTargetPower = flTargetPower - correctionSpeed;
                     frTargetPower = frTargetPower + correctionSpeed;
                     blTargetPower = blTargetPower - correctionSpeed;
@@ -664,26 +547,6 @@ public class experimentalTeleop extends LinearOpMode {
         FrontRightMotor.setPower(frTargetPower);
         BackLeftMotor.setPower(blTargetPower);
         BackRightMotor.setPower(brTargetPower);
-//        if (gamepad1.right_trigger > 0) {
-//            pulleyMotor.setPower(gamepad1.right_trigger);
-//        } else if (gamepad1.left_trigger > 0) {
-//            pulleyMotor.setPower(-gamepad1.left_trigger);
-//        } else {
-//            pulleyMotor.setPower(0);
-//        }
     }
-
-//    private void update_values() {
-//        if (gamepad1.x) {
-//            sendDataAndReset();
-//        } else if (gamepad1.y) {
-//            resetMotors();
-//        }
-//
-//        if (gamepad1.left_bumper) {
-//            sendCurrentPower();
-//
-//        }
-//    }
 
 }

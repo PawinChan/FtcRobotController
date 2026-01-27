@@ -1,0 +1,689 @@
+package org.firstinspires.ftc.teamcode.legacy;
+
+import com.google.gson.Gson;
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.CRServo;
+import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.robotcore.hardware.Servo;
+
+import org.firstinspires.ftc.robotcore.external.JavaUtil;
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.teamcode.util.TelemetryWebsocketsServer;
+import org.java_websocket.server.WebSocketServer;
+
+import java.net.InetSocketAddress;
+import java.text.DecimalFormat;
+import java.util.LinkedHashMap;
+
+@TeleOp(name = "helloAndroidStudio2")
+public class experimentalTeleopWithLegacyStuff extends LinearOpMode {
+
+    private DcMotor FrontLeftMotor;
+    private DcMotor FrontRightMotor;
+    private DcMotor BackLeftMotor;
+    private DcMotor BackRightMotor;
+    private DcMotor scooperMotor;
+    private DcMotor flywheelMotorL;
+    private DcMotor flywheelMotorR;
+//    private Servo distanceSensorServo;
+    private IMU imu_IMU;
+    private Servo clawServo;
+
+    private Servo trafficStopServo;
+
+    private CRServo sweeperServoA;
+    private CRServo sweeperServoB;
+    private CRServo sweeperServoC;
+//    private CRServo sweeperServoD;
+//    private CRServo sweeperServo;
+//    private DistanceSensor turningDistanceSensor;
+//    private DistanceSensor rightDistanceSensor;
+
+    double headingDiff;
+    double targetHeading = 0;
+    double currentHeading = 0;
+    double rightJoyReleasedAt = 0;
+
+
+    boolean rightJoyWasActive = false;
+    double SIDEWAYS_CORRECTION_FACTOR = 0.09;
+    int ANGLE_TOLERANCE = 1;
+    double TURN_SETTLE_SECS = 0.2;
+    boolean targetHeadingRecorded = true; //its set just above to 0 when the robot starts
+
+    boolean websocketsTelemetryEnabled = false;
+    WebSocketServer server;
+    LinkedHashMap<String, LinkedHashMap<String, Object>> telemetryDataDict = new LinkedHashMap<>();
+    int iceCreamUpPosition = 0;
+    enum IceCreamShortcutStatus {
+        CLOSING_GRIP,
+        MOVING_UP,
+        MOVING_DOWN_TO_PASS_STICK,
+        MOVING_DOWN_WHILE_RELEASING_GRIP,
+        IDLE
+    };
+
+    IceCreamShortcutStatus iceCreamShortcutStatus = IceCreamShortcutStatus.IDLE;
+    double iceCreamMotorMoveStartedAt;
+    Boolean iceCreamMotorMoveRegistered = false;
+
+
+
+//
+
+    /**
+     * This sample contains the bare minimum Blocks for any regular OpMode. The 3 blue
+     * Comment Blocks show where to place Initialization code (runs once, after touching the
+     * DS INIT button, and before touching the DS Start arrow), Run code (runs once, after
+     * touching Start), and Loop code (runs repeatedly while the OpMode is active, namely not
+     * Stopped).
+     */
+
+
+    @Override
+    public void runOpMode() {
+        FrontLeftMotor = hardwareMap.get(DcMotor.class, "FrontLeftMotor");
+        FrontRightMotor = hardwareMap.get(DcMotor.class, "FrontRightMotor");
+        BackLeftMotor = hardwareMap.get(DcMotor.class, "BackLeftMotor");
+        BackRightMotor = hardwareMap.get(DcMotor.class, "BackRightMotor");
+        scooperMotor = hardwareMap.get(DcMotor.class, "scooperMotor");
+        flywheelMotorL = hardwareMap.get(DcMotor.class, "flywheelMotorL");
+        flywheelMotorR = hardwareMap.get(DcMotor.class, "flywheelMotorR");
+//        distanceSensorServo = hardwareMap.get(Servo.class, "distanceSensorServo");
+        imu_IMU = hardwareMap.get(IMU.class, "imu");
+        clawServo = hardwareMap.get(Servo.class, "clawServo");
+        trafficStopServo = hardwareMap.get(Servo.class, "trafficStopServo");
+        sweeperServoA = hardwareMap.get(CRServo.class, "sweeperServoA");
+        sweeperServoB = hardwareMap.get(CRServo.class, "sweeperServoB");
+        sweeperServoC = hardwareMap.get(CRServo.class, "sweeperServoC");
+//        sweeperServoD = hardwareMap.get(CRServo.class, "sweeperServoD");
+//        turningDistanceSensor = hardwareMap.get(DistanceSensor.class, "turningDistanceSensor");
+//        rightDistanceSensor = hardwareMap.get(DistanceSensor.class, "rightDistanceSensor");
+
+        setup();
+        collectTelemetry("Message", "Ready: ", "Waiting for start.");
+        submitTelemetry();
+        waitForStart();
+        if (opModeIsActive()) {
+//            distanceSensorServo.setPosition(0.25);
+            while (opModeIsActive()) {
+                main_loop();
+            }
+            if (websocketsTelemetryEnabled) {
+                try {
+                    server.stop();
+                } catch (Exception e) {
+                    //pass
+                }
+            }
+        }
+    }
+
+
+    private void collectTelemetry(String category, String key, Object value){
+        String valueToAdd;
+        if (value instanceof String) {
+            valueToAdd = (String) value;
+        } else if (value instanceof Integer) {
+            valueToAdd = value.toString();
+        } else if (value instanceof Double) {
+            DecimalFormat df = new DecimalFormat("0.00");
+            valueToAdd =  df.format(value);
+        } else {
+            valueToAdd = value.toString();
+        }
+
+
+        if (!telemetryDataDict.containsKey(category)) {
+            telemetryDataDict.put(category, new LinkedHashMap<String, Object>());
+        }
+
+        telemetryDataDict.get(category).put(key, valueToAdd);
+        //Add it to the controller screen too.
+        telemetry.addData(key, value);
+    }
+
+    private void submitTelemetry() {
+        telemetry.update();
+
+        if (websocketsTelemetryEnabled) {
+            Gson gson = new Gson();
+            server.broadcast(gson.toJson(telemetryDataDict));
+        }
+        telemetryDataDict.clear();
+
+    }
+
+    private void initializeIMU() {
+        imu_IMU.initialize(new IMU.Parameters(new RevHubOrientationOnRobot(RevHubOrientationOnRobot.LogoFacingDirection.LEFT, RevHubOrientationOnRobot.UsbFacingDirection.UP)));
+//        imu_IMU.initialize(new IMU.Parameters(new RevHubOrientationOnRobot(RevHubOrientationOnRobot.LogoFacingDirection.FORWARD, RevHubOrientationOnRobot.UsbFacingDirection.LEFT)));
+        imu_IMU.resetYaw();
+    }
+
+    private void setup() {
+        if (websocketsTelemetryEnabled) {
+           server = new TelemetryWebsocketsServer(new InetSocketAddress("0.0.0.0", 8765));
+        }
+
+        scooperMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+
+        // Put initialization blocks here.
+        telemetry.setNumDecimalPlaces(0, 4);
+        // Make all moving motors float
+        FrontLeftMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        FrontRightMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        BackLeftMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        BackRightMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        // Enable the encoders on them.
+        FrontLeftMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        FrontRightMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        BackLeftMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        BackRightMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        // Make right motors go reverse
+        FrontRightMotor.setDirection(DcMotor.Direction.REVERSE);
+        BackRightMotor.setDirection(DcMotor.Direction.REVERSE);
+        // Make all the manipulating motors brake
+        scooperMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        scooperMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+        flywheelMotorL.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        flywheelMotorR.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+
+        sweeperServoA.setPower(0);
+        sweeperServoB.setPower(0);
+        sweeperServoC.setPower(0);
+
+        // Enter your comment here!
+        initializeIMU();
+        if (websocketsTelemetryEnabled) {
+            server.start();
+        }
+
+        iceCreamUpPosition = scooperMotor.getCurrentPosition();
+    }
+
+    private void main_loop() {
+        update_manipulators();
+        update_movers();
+//        update_values();
+        update_telemetry();
+
+    }
+
+    private double scaleSpeed(double somethingToScale) {
+        double scaledValue;
+
+        if (somethingToScale >= 0) {
+            scaledValue = 1 * (Math.log(9 * Math.min(Math.max(somethingToScale, 0), 1) + 1) / Math.log(10));
+        } else {
+            scaledValue = -(1 * (Math.log(9 * Math.min(Math.max(-somethingToScale, 0), 1) + 1) / Math.log(10)));
+        }
+        return scaledValue;
+    }
+
+    private double getHeading() {
+        double botHeadingDeg = imu_IMU.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
+        collectTelemetry("IMU","Yaw (heading)", botHeadingDeg);
+        collectTelemetry("IMU", "YawPitchRoll", imu_IMU.getRobotYawPitchRollAngles().toString());
+        return botHeadingDeg;
+    }
+
+    private double getHeadingDiff(double targetHeading, double currentHeading) {
+        if (Math.abs(targetHeading) == 180) {
+            // Since 180 = -180, you can pretty much go both ways, depending on which is closer
+            if (currentHeading >= 0) {
+                headingDiff = 180 - currentHeading;
+            } else {
+                headingDiff = -180 - currentHeading;
+            }
+        } else {
+            if ((targetHeading < -90) && currentHeading > 90) {
+                targetHeading += 360;
+            } else if ((targetHeading > 90) && currentHeading < -90) {
+                targetHeading -= 360;
+            }
+            headingDiff = targetHeading - currentHeading;
+        }
+        return headingDiff;
+    }
+
+    private double getCorrectionSpeed(double currentSpeed) {
+        double coastingSpeed;
+        currentSpeed = Math.abs(currentSpeed);
+        if (currentSpeed == 0) {
+            return 0.05; //Make it correct quickly when it stops
+        }
+
+        if (currentSpeed < 0.219512) {
+            coastingSpeed = currentSpeed / 2;
+        }
+        else {
+            coastingSpeed = 0.09 * currentSpeed + 0.09;
+        }
+        collectTelemetry("Steering", "calculatedCorrectionSpeed", coastingSpeed);
+        return coastingSpeed;
+    }
+    // SECTION: EXPERIMENTAL CODE
+
+//    private int getHTTP(String targetUrl) {
+//        collectTelemetry("HTTP", "GETting " + targetUrl);
+//        submitTelemetry();
+//        collectTelemetry("HTTP", "GETting " + targetUrl);
+//        try {
+//            URL url = new URL(targetUrl);
+//            HttpURLConnection con = (HttpURLConnection) url.openConnection();
+//            con.setRequestMethod("GET");
+//            con.setRequestProperty("Content-Type", "application/json");
+//            int status = con.getResponseCode();
+//            con.disconnect();
+//            return status;
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            collectTelemetry("Exception", e);
+//            return -1;
+//        }
+//    }
+
+//    private int postHTTP(String targetUrl, JSONObject jsonData) {
+//        collectTelemetry("HTTP", "POSTing to " + targetUrl);
+//        submitTelemetry();
+//        collectTelemetry("HTTP", "POSTing to " + targetUrl);
+//        try {
+//            URL url = new URL(targetUrl);
+//            HttpURLConnection con = (HttpURLConnection) url.openConnection();
+//            con.setConnectTimeout(1000);
+//            con.setReadTimeout(1000);
+//            con.setRequestMethod("POST");
+//            con.setRequestProperty("Content-Type", "application/json");
+//
+//            OutputStreamWriter wr = new OutputStreamWriter(con.getOutputStream());
+//
+//            // jsonData.put("message", "Hi there!");
+//            wr.write(jsonData.toString());
+//            wr.flush();
+//
+//            int status = con.getResponseCode();
+//            con.disconnect();
+//            return status;
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            collectTelemetry("Exception", e);
+//            return -1;
+//        }
+//    }
+
+    private void setModeAll_stopAndReset() {
+        FrontLeftMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        FrontRightMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        BackLeftMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        BackRightMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+    }
+
+    private void setModeAll_runUsingEncoder() {
+        FrontLeftMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        FrontRightMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        BackLeftMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        BackRightMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+    }
+
+    private void resetMotors() {
+        setModeAll_stopAndReset();
+        setModeAll_runUsingEncoder();
+    }
+
+//    private void sendDataAndReset() {
+//        String LOG_ENDPOINT = "http://192.168.43.151:8000/addPoint";
+//        JSONObject jsonData = new JSONObject();
+//        JSONObject motorTicks = new JSONObject();
+//        JSONObject distanceSensors = new JSONObject();
+//
+//        motorTicks.put("flMotorTicks", FrontLeftMotor.getCurrentPosition());
+//        motorTicks.put("frMotorTicks", FrontRightMotor.getCurrentPosition());
+//        motorTicks.put("blMotorTicks", BackLeftMotor.getCurrentPosition());
+//        motorTicks.put("brMotorTicks", BackRightMotor.getCurrentPosition());
+//
+//        distanceSensors.put("leftDistance", null);
+//        distanceSensors.put("backDistance", turningDistanceSensor.getDistance(DistanceUnit.CM));
+//        distanceSensors.put("rightDistance", rightDistanceSensor.getDistance(DistanceUnit.CM));
+//
+//        jsonData.put("motorTicks", motorTicks);
+//        jsonData.put("distanceSensors", distanceSensors);
+//
+//        postHTTP(LOG_ENDPOINT, jsonData);
+//        resetMotors();
+//    }
+
+//    private void sendCurrentPower() {
+//        String LOG_ENDPOINT = "http://192.168.43.151:8000/addPoint";
+//        JSONObject jsonData = new JSONObject();
+//        JSONObject motorTicks = new JSONObject();
+//        JSONObject distanceSensors = new JSONObject();
+//
+//    }
+
+    private void update_telemetry() {
+//        DecimalFormat df = new DecimalFormat("0.00");
+        collectTelemetry("Decorative", "SECTION", "POWER");
+        // Front Motors
+        collectTelemetry("Power", "Front Left", FrontLeftMotor.getPower());
+        collectTelemetry("Power", "Front Right", FrontRightMotor.getPower());
+        // Back Motors
+        collectTelemetry("Power", "Back Left", BackLeftMotor.getPower());
+        collectTelemetry("Power", "Back Right", BackRightMotor.getPower());
+        // Manipulating Motors
+        collectTelemetry("Power", "Scooper", scooperMotor.getPower());
+        collectTelemetry("Power", "Flywheel", flywheelMotorL.getPower() + " & " + flywheelMotorR.getPower());
+        // POSITIONING
+        collectTelemetry("Position", "SECTION", "ARM POSITIONS");
+        collectTelemetry("Position", "Scooper", scooperMotor.getCurrentPosition() + " / " + scooperMotor.getTargetPosition());
+        collectTelemetry("Position", "SECTION", "WHEEL POSITIONS");
+        collectTelemetry("Position", "Front", FrontLeftMotor.getCurrentPosition() + "     " + FrontRightMotor.getCurrentPosition());
+        collectTelemetry("Position", "Back", BackLeftMotor.getCurrentPosition() + "     " + BackRightMotor.getCurrentPosition());
+        // SERVOS& SENSORS
+        collectTelemetry("Servo", "GrabbyPosition", clawServo.getPosition());
+        collectTelemetry("Servo", "SweepyPower", sweeperServoA.getPower() + " & " + sweeperServoB.getPower() + " & "  + sweeperServoC.getPower());// + " & " + sweeperServoD.getPower());
+
+//        collectTelemetry("sensors", "TurningDistSensorCM", turningDistanceSensor.getDistance(DistanceUnit.CM));
+//        collectTelemetry("sensors", "RightDistSensorCM", rightDistanceSensor.getDistance(DistanceUnit.CM));
+        // Send Updates
+        submitTelemetry();
+    }
+
+
+    private void update_manipulators() {
+
+        //Manipulators use gamepad 2
+
+//        double manipulatingPower = 0;
+//        double mTargetPower = 0;
+//        boolean mMotorAnchored = false;
+//        double hTargetPower = 0;
+//        boolean hMotorAnchored = false;
+
+//        // Check power boost
+//        if (gamepad1.left_bumper) {
+//            manipulatingPower = 1;
+//        } else {
+//            manipulatingPower = 0.5;
+//        }
+        // Get input for extenders
+//        if (iceCreamShortcutStatus == IceCreamShortcutStatus.IDLE) {
+//            if (gamepad1.dpad_up || gamepad1.left_bumper) {
+//                //SHORTCUT: STEP 1 - close grip and move arm up
+//                clawServo.setPosition(0.90);
+//                iceCreamShortcutStatus = IceCreamShortcutStatus.CLOSING_GRIP;
+//                scooperMotor.setTargetPosition(iceCreamUpPosition);
+//                //Waiting a bit for arm to close, then start ice cream arm motor
+//                sleep(250);
+//                scooperMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+//                scooperMotor.setPower(1);
+//                iceCreamShortcutStatus = IceCreamShortcutStatus.MOVING_UP;
+//            }
+//            else if (gamepad1.dpad_down) {
+//                // only run latter half of the shortcut to put down the scooper after initialization
+//                iceCreamShortcutStatus = IceCreamShortcutStatus.MOVING_UP;
+//                // The next loop it will jump to step 3
+//            }
+//        } else {
+//            if (scooperMotor.isBusy()) {
+//                //SHORTCUT: STEP 2, 4, and 6
+////                if (!iceCreamMotorMoveRegistered) {
+////                    iceCreamMotorMoveStartedAt = getRuntime();
+////                    iceCreamMotorMoveRegistered = true;
+////                    telemetry.addData("IceCreamStatus", "Starting: " + iceCreamShortcutStatus.name());
+////
+////                } else {
+////                    if ((getRuntime() - iceCreamMotorMoveStartedAt) > 10) {
+////                        scooperMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+////                        scooperMotor.setPower(0);
+////                        telemetry.addData("IceCreamStatus", "Motor timed out:(");
+////                    } else {
+////                        //normal operation
+////                        telemetry.addData("IceCreamStatus", "Busy with: " + iceCreamShortcutStatus.name());
+////                    }
+////                }
+//                telemetry.addData("IceCreamStatus", "Busy with: " + iceCreamShortcutStatus.name());
+//
+//            } else {
+//                iceCreamMotorMoveRegistered = false;
+//
+//                //motor movement completed / not busy anymore -> Do next step
+//
+//                //If the last action was moving up, move it down past the stick..
+//                if (iceCreamShortcutStatus == IceCreamShortcutStatus.MOVING_UP) {
+//                    //SHORTCUT: STEP 3
+//                    iceCreamShortcutStatus = IceCreamShortcutStatus.MOVING_DOWN_TO_PASS_STICK;
+//                    scooperMotor.setTargetPosition(iceCreamUpPosition - 30);
+//                    scooperMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+//                    scooperMotor.setPower(-0.5);
+//                //If the last action was moving down pass the stick, continue moving it while releasing grip to the ground
+//                } else if (iceCreamShortcutStatus == IceCreamShortcutStatus.MOVING_DOWN_TO_PASS_STICK) {
+//                    //Shortcut: STEP 5
+//                    iceCreamShortcutStatus = IceCreamShortcutStatus.MOVING_DOWN_WHILE_RELEASING_GRIP;
+//                    scooperMotor.setTargetPosition(iceCreamUpPosition - 70);
+//                    scooperMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+//                    scooperMotor.setPower(-0.5);
+//
+//                    clawServo.setPosition(0.5);
+//                }
+//                // If the last action was moving it down, there's nothing else to do -- mark as idle.
+//                else if (iceCreamShortcutStatus == IceCreamShortcutStatus.MOVING_DOWN_WHILE_RELEASING_GRIP) {
+//                    //SHORTCUT: STEP 7
+//                    iceCreamShortcutStatus = IceCreamShortcutStatus.IDLE;
+//                    scooperMotor.setPower(0);
+////                    scooperMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+//                }
+//            }
+//        }
+//        if (gamepad1.dpad_left) {
+//            hMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+//            hTargetPower = -manipulatingPower;
+//            hMotorAnchored = false;
+//        } else if (gamepad1.dpad_right) {
+//            hMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+//            hTargetPower = manipulatingPower;
+//            hMotorAnchored = false;
+//        } else {
+//            if (!hMotorAnchored) {
+//                // Uncomment 3 lines below to enable anchoring
+////                hMotor.setTargetPosition(hMotor.getCurrentPosition());
+////                hMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+////                hTargetPower = 0.5;
+//                hMotorAnchored = true;
+//            }
+//        }
+        // Deal with manipulators
+//        if (gamepad1.dpad_left) {
+//            //Close
+//            clawServo.setPosition(0.90);
+//        } else if (gamepad1.dpad_right) {
+//            //Open
+//            clawServo.setPosition(0.5);
+//        }
+//        else {
+//            clawServo.setPosition((gamepad2.left_stick_y+1)/2);
+//        }
+        if (gamepad1.x) {
+            flywheelMotorL.setPower(0.8);
+            flywheelMotorR.setPower(-0.8);
+//            sweeperServo.setPower(1);
+        } else if (gamepad1.y) {
+            flywheelMotorL.setPower(0);
+            flywheelMotorR.setPower(0);
+        } else {
+            //Don't do anything.
+//            sweeperServo.setPower(0);
+        }
+
+        if (gamepad1.a) {
+            sweeperServoA.setPower(-1);
+            sweeperServoB.setPower(-1);
+            sweeperServoC.setPower(-1);
+//            sweeperServoD.setPower(0);
+//            trafficStopServo.setPosition(0.3);
+        } else if (gamepad1.b) {
+//            trafficStopServo.setPosition(0.15);
+            sweeperServoA.setPower(0);
+            sweeperServoB.setPower(0);
+            sweeperServoC.setPower(0);
+//            sweeperServoD.setPower(0);
+
+
+        } else {
+            // pass
+        }
+    }
+
+
+    private void update_movers() {
+        //Movers use gamepad1
+
+        double speedMulti;
+        double flTargetPower;
+        double frTargetPower;
+        float joyLeftX;
+        double blTargetPower;
+        double brTargetPower;
+        float joyLeftY;
+        double joyRightX;
+        double joyRightY;
+        double maxCalculatedPower;
+        boolean correctionDisabled = false;
+
+        if (gamepad1.right_bumper) {
+            speedMulti = 0.3;
+        } else {
+            speedMulti = 1;
+        }
+        // Get Joystick Value
+        joyLeftX = (float) scaleSpeed(-gamepad1.left_stick_x * 0.9);
+        joyLeftY = (float) scaleSpeed(gamepad1.left_stick_y * 0.9);
+        joyRightX = (float) scaleSpeed(-gamepad1.right_stick_x * 0.4);
+        joyRightY = gamepad1.right_stick_y * 0.6;
+        // Set target motor powers based on x, y, and yaw
+        flTargetPower = (joyLeftY + joyLeftX + joyRightX) * speedMulti;
+        frTargetPower = (joyLeftY + -joyLeftX + -joyRightX) * speedMulti;
+        blTargetPower = (joyLeftY + -joyLeftX + joyRightX) * speedMulti;
+        brTargetPower = (joyLeftY + joyLeftX + -joyRightX) * speedMulti;
+        // Normalize Values if they happen to go above 1
+        maxCalculatedPower = JavaUtil
+                .maxOfList(JavaUtil.createListWith(flTargetPower, frTargetPower, blTargetPower, brTargetPower));
+        if (maxCalculatedPower > 1) {
+            flTargetPower = flTargetPower / maxCalculatedPower;
+            frTargetPower = frTargetPower / maxCalculatedPower;
+            blTargetPower = blTargetPower / maxCalculatedPower;
+            brTargetPower = brTargetPower / maxCalculatedPower;
+
+            targetHeadingRecorded = true;
+        }
+        // Activate heading corrections only when we're not steering
+        if (joyRightX == 0) {
+
+            // The robot (with its inertia) will continue to turn for a bit more even after we lift
+            // our hands from the control and the turning power is cut. This code block checks if
+            // the joystick was just released  more than 0.2s (TURN_SETTLE_SECS) and decides if the
+            // heading correction should be activated.
+
+            // Essentially, it should go like this:
+            // 1. Upon initialization, the target heading is initialized as 0 (straight ahead), so
+            // targetHeadingRecorded is set to true;
+            // 2. The robot is moved using the left joystick (up/down/left/right). No right joystick
+            // was inputted = no intention to change heading = same target heading is still valid.
+            // 3. When right joy has input, the heading will be intentionally changed. The current
+            // target heading is now invalid. However, we can't record the new target heading yet as
+            // the joystick controls was just lifted and the robot still have turning motion. So, we
+            // simply note down that we still need to record the heading (targetHeadingRecorded = false)
+            // and record the current time for reference.
+            // 4. The next time we arrive at this function, we check if the heading was recorded yet.
+            // if we see that it's not, we check if the joystick has been released for more than 0.2s
+            // (TURN_SETTLE_SECS), and if so, we record the heading and mark that the heading is
+            // up-to-date. If not, we just do nothing, keeping the heading correction disabled until
+            // the timer has passed and the robot has (hopefully) stopped turning.
+
+
+            if (rightJoyWasActive) {
+                rightJoyReleasedAt = getRuntime();
+                collectTelemetry("Corrections", "Angle Timer", "Started");
+                correctionDisabled = true;
+                targetHeadingRecorded = false;
+                rightJoyWasActive = false;
+            } else if (!targetHeadingRecorded) {
+                if ((getRuntime() - rightJoyReleasedAt) > TURN_SETTLE_SECS) {
+                    targetHeading = getHeading();
+                    collectTelemetry("Corrections", "Angle Timer", "Done");
+                    targetHeadingRecorded = true;
+                } else {
+                    collectTelemetry("Corrections", "Angle Timer", "Waiting");
+                    correctionDisabled = true;
+                }
+            }
+
+            if (!correctionDisabled) {
+                currentHeading = getHeading();
+                headingDiff = getHeadingDiff(targetHeading, currentHeading);
+                if (Math.abs(headingDiff) < ANGLE_TOLERANCE) {
+                    // Within Threshold
+                    collectTelemetry("Corrections","Turning Correction", "N/A");
+                } else if (headingDiff < 0) {
+                    // Need to go right
+                    double correctionSpeed = getCorrectionSpeed(flTargetPower) * 0.8;
+                    flTargetPower = flTargetPower - correctionSpeed;
+                    frTargetPower = frTargetPower + correctionSpeed;
+                    blTargetPower = blTargetPower - correctionSpeed;
+                    brTargetPower = brTargetPower + correctionSpeed;
+                    collectTelemetry("Corrections","Turning Correction", "Adjusting Right");
+                } else if (headingDiff > 0) {
+                    // Need to go left
+                    double correctionSpeed = getCorrectionSpeed(flTargetPower);
+                    flTargetPower = flTargetPower + correctionSpeed;
+                    frTargetPower = frTargetPower - correctionSpeed;
+                    blTargetPower = blTargetPower + correctionSpeed;
+                    brTargetPower = brTargetPower - correctionSpeed;
+                    collectTelemetry("Corrections","Turning Correction", "Adjusting Left");
+                }
+            }
+        } else {
+            rightJoyWasActive = true;
+            //Right joystick is being controlled.
+        }
+        collectTelemetry("Corrections","TargetHeading", targetHeading);
+//        collectTelemetry("CurrentHeading", currentHeading);
+        maxCalculatedPower = JavaUtil
+                .maxOfList(JavaUtil.createListWith(flTargetPower, frTargetPower, blTargetPower, brTargetPower));
+        if (maxCalculatedPower > 1) {
+            flTargetPower = flTargetPower / maxCalculatedPower;
+            frTargetPower = frTargetPower / maxCalculatedPower;
+            blTargetPower = blTargetPower / maxCalculatedPower;
+            brTargetPower = brTargetPower / maxCalculatedPower;
+        }
+        // Set Motors
+        FrontLeftMotor.setPower(flTargetPower);
+        FrontRightMotor.setPower(frTargetPower);
+        BackLeftMotor.setPower(blTargetPower);
+        BackRightMotor.setPower(brTargetPower);
+//        if (gamepad1.right_trigger > 0) {
+//            pulleyMotor.setPower(gamepad1.right_trigger);
+//        } else if (gamepad1.left_trigger > 0) {
+//            pulleyMotor.setPower(-gamepad1.left_trigger);
+//        } else {
+//            pulleyMotor.setPower(0);
+//        }
+    }
+
+//    private void update_values() {
+//        if (gamepad1.x) {
+//            sendDataAndReset();
+//        } else if (gamepad1.y) {
+//            resetMotors();
+//        }
+//
+//        if (gamepad1.left_bumper) {
+//            sendCurrentPower();
+//
+//        }
+//    }
+
+}
